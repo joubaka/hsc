@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\MemberController;
+use App\Http\Controllers\Api\MembershipPeriodController;
 use App\Http\Controllers\Api\MembershipSetupController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,8 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('members/meta', [MemberController::class, 'meta']);
     Route::apiResource('members', MemberController::class);
+    Route::apiResource('membership-periods', MembershipPeriodController::class)->only(['index', 'store', 'update']);
+    Route::post('membership-periods/{membershipPeriod}/transition', [MembershipPeriodController::class, 'transition']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);

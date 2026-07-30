@@ -9,4 +9,9 @@ export default [
     to: { name: 'membership-setup' },
     icon: { icon: 'tabler-id-badge-2' },
   },
+  {
+    title: 'Membership periods',
+    to: { name: 'membership-periods' },
+    icon: { icon: 'tabler-calendar-stats' },
+  },
 ]
