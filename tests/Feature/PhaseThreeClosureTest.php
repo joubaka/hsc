@@ -126,10 +126,17 @@ class PhaseThreeClosureTest extends TestCase
         [$member,$code,$category,$target] = $this->domain();
         $previous = MembershipPeriod::factory()->create(['starts_on' => '2026-01-01', 'ends_on' => '2026-12-31', 'status' => 'archived']);
         SportMembership::create(['member_id' => $member->id, 'sport_code_id' => $code->id, 'membership_category_id' => $category->id, 'membership_period_id' => $previous->id, 'status' => 'active', 'role' => 'member', 'joined_or_renewed_on' => '2026-01-01', 'starts_on' => '2026-01-01', 'ends_on' => '2026-12-31', 'sport_code_fee_cents' => 100000, 'hsc_levy_cents' => 20000, 'total_cents' => 120000, 'billing_frequency' => 'annual']);
+        $inactiveCategory = MembershipCategory::create(['sport_code_id' => $code->id, 'name' => 'Inactive', 'code_fee_cents' => 50000, 'hsc_levy_cents' => 20000, 'billing_period' => 'annual', 'active' => false]);
+        $inactiveMember = Member::create(['member_number' => 'HSC-M2', 'first_name' => 'Member', 'last_name' => 'Inactive', 'date_of_birth' => '1980-01-01', 'status' => 'active']);
+        SportMembership::create(['member_id' => $inactiveMember->id, 'sport_code_id' => $code->id, 'membership_category_id' => $inactiveCategory->id, 'membership_period_id' => $previous->id, 'status' => 'active', 'role' => 'member', 'joined_or_renewed_on' => '2026-01-01', 'starts_on' => '2026-01-01', 'ends_on' => '2026-12-31', 'sport_code_fee_cents' => 50000, 'hsc_levy_cents' => 20000, 'total_cents' => 70000, 'billing_frequency' => 'annual']);
         $query = "?membership_period_id=$target->id&sport_code_id=$code->id";
-        $this->withToken('token')->getJson("/api/renewals/dashboard$query")->assertJsonPath('counts.not_started', 1);
-        $this->withToken('token')->postJson('/api/renewals/bulk-drafts', ['membership_period_id' => $target->id, 'sport_code_id' => $code->id])->assertJsonPath('results.0.outcome', 'created');
-        $this->withToken('token')->postJson('/api/renewals/bulk-drafts', ['membership_period_id' => $target->id, 'sport_code_id' => $code->id])->assertJsonPath('results.0.outcome', 'already_exists');
+        $this->withToken('token')->getJson("/api/renewals/dashboard$query")->assertJsonPath('counts.not_started', 2);
+        $this->withToken('token')->postJson('/api/renewals/bulk-drafts', ['membership_period_id' => $target->id, 'sport_code_id' => $code->id])
+            ->assertJsonPath('results.0.outcome', 'created')
+            ->assertJsonPath('results.1.outcome', 'ineligible');
+        $this->withToken('token')->postJson('/api/renewals/bulk-drafts', ['membership_period_id' => $target->id, 'sport_code_id' => $code->id])
+            ->assertJsonPath('results.0.outcome', 'already_exists')
+            ->assertJsonPath('results.1.outcome', 'ineligible');
         $this->assertSame(1, MembershipApplication::where('application_type', 'renewal')->count());
     }
 

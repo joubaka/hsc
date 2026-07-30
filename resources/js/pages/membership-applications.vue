@@ -3,6 +3,11 @@ import { $api } from '@/utils/api'
 
 const items = ref([])
 const meta = ref({ members: [], sport_codes: [], periods: [] })
+const currentUser = JSON.parse(localStorage.getItem('hsc_admin_user') || '{}')
+const isCentral = ['hsc_super_admin', 'hsc_admin'].includes(currentUser.role)
+const writableSportIds = (currentUser.sport_codes || [])
+  .filter(code => ['administrator', 'committee'].includes(code.pivot?.role))
+  .map(code => code.id)
 const createOpen = ref(false)
 const detail = ref(null)
 const audit = ref([])
@@ -13,13 +18,17 @@ const administratorNotes = ref('')
 const acting = ref(false)
 const savingInformation = ref(false)
 const errors = ref('')
-const requestedInformation = ref({ applicant_notes: '' })
-const form = reactive({
+const requestedInformation = ref({
+  applicant_notes: '', guardian_name: '', guardian_relationship: '', guardian_email: '', guardian_mobile: '',
+  guardian_consent: false, independent_access_permitted: false,
+})
+const blankForm = () => ({
   member_id: null, sport_code_id: null, membership_category_id: null, membership_period_id: null,
   application_type: 'new_membership', applicant_notes: '', joining_fee: 0, discount: 0,
   override_reason: '', guardian_member_id: null, guardian_name: '', guardian_relationship: '',
   guardian_email: '', guardian_mobile: '', guardian_consent: false, independent_access_permitted: false,
 })
+const form = reactive(blankForm())
 const selectedCode = computed(() => meta.value.sport_codes.find(code => code.id === form.sport_code_id))
 const selectedMember = computed(() => meta.value.members.find(member => member.id === form.member_id))
 const selectedPeriod = computed(() => meta.value.periods.find(period => period.id === form.membership_period_id))
@@ -32,6 +41,27 @@ const ageAtPeriodStart = computed(() => {
   return age
 })
 const junior = computed(() => ageAtPeriodStart.value !== null && ageAtPeriodStart.value < 18)
+const detailIsJunior = computed(() => {
+  if (!detail.value?.member?.date_of_birth || !detail.value?.period?.starts_on) return false
+  const birth = new Date(detail.value.member.date_of_birth)
+  const start = new Date(detail.value.period.starts_on)
+  let age = start.getFullYear() - birth.getFullYear()
+  if (start < new Date(start.getFullYear(), birth.getMonth(), birth.getDate())) age--
+  return age < 18
+})
+const detailSportFeeCents = computed(() => detail.value?.status === 'draft'
+  ? detail.value?.category?.code_fee_cents
+  : detail.value?.sport_code_fee_cents)
+const detailLevyCents = computed(() => detail.value?.status === 'draft'
+  ? detail.value?.category?.hsc_levy_cents
+  : detail.value?.hsc_levy_cents)
+const detailTotalCents = computed(() => detail.value?.status === 'draft'
+  ? (detailSportFeeCents.value || 0) + (detailLevyCents.value || 0) + (detail.value?.joining_fee_cents || 0) - (detail.value?.discount_cents || 0)
+  : detail.value?.total_payable_cents)
+const detailBillingFrequency = computed(() => detail.value?.status === 'draft'
+  ? detail.value?.category?.billing_period
+  : detail.value?.billing_frequency)
+const canCreateApplications = computed(() => isCentral || writableSportIds.length > 0)
 const householdGuardians = computed(() => meta.value.members.filter(member => {
   if (!selectedMember.value?.household_id || member.household_id !== selectedMember.value.household_id || !member.date_of_birth) return false
   const birth = new Date(member.date_of_birth)
@@ -56,6 +86,11 @@ async function create() {
     await load()
   } catch (error) { errors.value = error?.data?.message || 'Please check the application information.' }
 }
+function openCreate() {
+  Object.assign(form, blankForm())
+  errors.value = ''
+  createOpen.value = true
+}
 async function view(item) {
   const [application, history] = await Promise.all([
     $api(`/membership-applications/${item.id}`),
@@ -63,7 +98,15 @@ async function view(item) {
   ])
   detail.value = application
   audit.value = history
-  requestedInformation.value = { applicant_notes: application.applicant_notes || '' }
+  requestedInformation.value = {
+    applicant_notes: application.applicant_notes || '',
+    guardian_name: application.guardian_name || '',
+    guardian_relationship: application.guardian_relationship || '',
+    guardian_email: application.guardian_email || '',
+    guardian_mobile: application.guardian_mobile || '',
+    guardian_consent: Boolean(application.guardian_consent),
+    independent_access_permitted: Boolean(application.independent_access_permitted),
+  }
 }
 async function saveRequestedInformation() {
   savingInformation.value = true
@@ -98,10 +141,10 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div :class="{ 'read-only-applications': !canCreateApplications }">
     <div class="d-flex flex-wrap justify-space-between align-center gap-3 mb-6">
       <div><h3 class="text-h3">Membership applications</h3><p class="text-medium-emphasis mb-0">Review applications before activating a sport membership.</p></div>
-      <VBtn prepend-icon="tabler-plus" @click="createOpen = true">New application</VBtn>
+      <VBtn v-if="canCreateApplications" prepend-icon="tabler-plus" @click="openCreate">New application</VBtn>
     </div>
     <VCard>
       <VCardText><VSelect v-model="status" label="Status" :items="['draft','submitted','under_review','information_required','approved','rejected','withdrawn','cancelled']" clearable hide-details style="max-width: 300px" /></VCardText>
@@ -117,8 +160,14 @@ onMounted(load)
       </VRow>
     </VCardText><VCardActions class="pa-6"><VSpacer /><VBtn variant="tonal" @click="createOpen = false">Cancel</VBtn><VBtn @click="create">Create draft</VBtn></VCardActions></VCard></VDialog>
 
-    <VNavigationDrawer :model-value="Boolean(detail)" location="right" temporary width="540" @update:model-value="value => { if (!value) detail = null }"><div v-if="detail" class="pa-6"><div class="d-flex justify-space-between"><h4 class="text-h4">{{ detail.member.display_name }}</h4><VBtn icon="tabler-x" variant="text" @click="detail = null" /></div><p>{{ detail.member.member_number }} · {{ detail.sport_code.name }} · {{ detail.category.name }} · {{ detail.period.name }}</p><VChip variant="tonal">{{ detail.status.replaceAll('_',' ') }}</VChip><VDivider class="my-5" /><h5 class="text-h5 mb-3">Fee snapshot</h5><p>Membership dates: {{ detail.period.starts_on.slice(0,10) }} – {{ detail.period.ends_on.slice(0,10) }}<br>Sport fee: {{ money(detail.sport_code_fee_cents) }}<br>HSC levy: {{ money(detail.hsc_levy_cents) }}<br>Joining fee: {{ money(detail.joining_fee_cents) }}<br>Discount: {{ money(detail.discount_cents) }}<br>Billing: {{ detail.billing_frequency || 'Frozen on submission' }}</p><h4>Total: {{ money(detail.total_payable_cents) }}</h4><template v-if="detail.status === 'information_required'"><VDivider class="my-5" /><h5 class="text-h5 mb-3">Requested information</h5><VAlert v-if="errors" type="error" variant="tonal" class="mb-4">{{ errors }}</VAlert><VTextarea v-model="requestedInformation.applicant_notes" label="Application notes" /><VBtn :loading="savingInformation" variant="tonal" class="mt-3" @click="saveRequestedInformation">Save requested information</VBtn><p class="text-caption mt-2 mb-0">Member, sport, category, period and frozen fees cannot be changed.</p></template><VDivider class="my-5" /><div class="d-flex flex-wrap gap-2"><VBtn v-if="['draft','information_required'].includes(detail.status)" @click="runAction('submit')">Submit</VBtn><VBtn v-if="detail.status === 'submitted'" @click="runAction('begin_review')">Begin review</VBtn><VBtn v-if="detail.status === 'under_review'" color="success" @click="decision = 'approve'">Approve</VBtn><VBtn v-if="detail.status === 'under_review'" color="error" variant="tonal" @click="decision = 'reject'">Reject</VBtn><VBtn v-if="detail.status === 'under_review'" variant="tonal" @click="runAction('request_information')">Request information</VBtn></div><VDivider class="my-5" /><h5 class="text-h5 mb-3">Audit history</h5><VTimeline side="end" density="compact"><VTimelineItem v-for="event in audit" :key="event.id" size="small"><div class="font-weight-medium">{{ event.action.replaceAll('.', ' · ').replaceAll('_', ' ') }}</div><div v-if="event.new_values?.rejection_reason" class="text-body-2">{{ event.new_values.rejection_reason }}</div><div class="text-caption">{{ event.user?.name || 'System' }} · {{ new Date(event.created_at).toLocaleString() }}</div></VTimelineItem></VTimeline></div></VNavigationDrawer>
+    <VNavigationDrawer :model-value="Boolean(detail)" location="right" temporary width="540" @update:model-value="value => { if (!value) detail = null }"><div v-if="detail" class="pa-6"><div class="d-flex justify-space-between"><h4 class="text-h4">{{ detail.member.display_name }}</h4><VBtn icon="tabler-x" variant="text" @click="detail = null" /></div><p>{{ detail.member.member_number }} · {{ detail.sport_code.name }} · {{ detail.category.name }} · {{ detail.period.name }}</p><VChip variant="tonal">{{ detail.status.replaceAll('_',' ') }}</VChip><VDivider class="my-5" /><h5 class="text-h5 mb-3">{{ detail.status === 'draft' ? 'Current draft pricing' : 'Fee snapshot' }}</h5><p>Membership dates: {{ detail.period.starts_on.slice(0,10) }} – {{ detail.period.ends_on.slice(0,10) }}<br>Sport fee: {{ money(detailSportFeeCents) }}<br>HSC levy: {{ money(detailLevyCents) }}<br>Joining fee: {{ money(detail.joining_fee_cents) }}<br>Discount: {{ money(detail.discount_cents) }}<br>Billing: {{ detailBillingFrequency || 'Frozen on submission' }}</p><h4>Total: {{ money(detailTotalCents) }}</h4><template v-if="['draft','information_required'].includes(detail.status)"><VDivider class="my-5" /><h5 class="text-h5 mb-3">{{ detail.status === 'draft' ? 'Draft information' : 'Requested information' }}</h5><VAlert v-if="errors" type="error" variant="tonal" class="mb-4">{{ errors }}</VAlert><VTextarea v-model="requestedInformation.applicant_notes" label="Application notes" /><template v-if="detailIsJunior"><VTextField v-if="!detail.guardian_member_id" v-model="requestedInformation.guardian_name" label="External guardian name" /><VTextField v-model="requestedInformation.guardian_relationship" label="Relationship" /><VTextField v-model="requestedInformation.guardian_email" label="Guardian email" /><VTextField v-model="requestedInformation.guardian_mobile" label="Guardian mobile" /><VCheckbox v-model="requestedInformation.guardian_consent" label="Guardian consent recorded" /><VCheckbox v-model="requestedInformation.independent_access_permitted" label="Independent premises access may be considered (does not grant access)" /></template><VBtn :loading="savingInformation" variant="tonal" class="mt-3" @click="saveRequestedInformation">Save application information</VBtn><p class="text-caption mt-2 mb-0">Member, sport, category, period and frozen fees cannot be changed.</p></template><VDivider class="my-5" /><div class="d-flex flex-wrap gap-2"><VBtn v-if="['draft','information_required'].includes(detail.status)" @click="runAction('submit')">Submit</VBtn><VBtn v-if="detail.status === 'submitted'" @click="runAction('begin_review')">Begin review</VBtn><VBtn v-if="detail.status === 'under_review'" color="success" @click="decision = 'approve'">Approve</VBtn><VBtn v-if="detail.status === 'under_review'" color="error" variant="tonal" @click="decision = 'reject'">Reject</VBtn><VBtn v-if="detail.status === 'under_review'" variant="tonal" @click="runAction('request_information')">Request information</VBtn></div><VDivider class="my-5" /><h5 class="text-h5 mb-3">Audit history</h5><VTimeline side="end" density="compact"><VTimelineItem v-for="event in audit" :key="event.id" size="small"><div class="font-weight-medium">{{ event.action.replaceAll('.', ' · ').replaceAll('_', ' ') }}</div><div v-if="event.new_values?.rejection_reason" class="text-body-2">{{ event.new_values.rejection_reason }}</div><div class="text-caption">{{ event.user?.name || 'System' }} · {{ new Date(event.created_at).toLocaleString() }}</div></VTimelineItem></VTimeline></div></VNavigationDrawer>
 
     <VDialog :model-value="Boolean(decision)" max-width="620" @update:model-value="value => { if (!value) decision = null }"><VCard v-if="detail"><VCardTitle class="pa-6">{{ decision === 'approve' ? 'Confirm application approval' : 'Reject application' }}</VCardTitle><VCardText><VAlert v-if="errors" type="error" variant="tonal" class="mb-4">{{ errors }}</VAlert><template v-if="decision === 'approve'"><VAlert type="warning" variant="tonal" class="mb-4">Approval creates an historical membership and cannot be reversed here.</VAlert><p><strong>{{ detail.member.display_name }} ({{ detail.member.member_number }})</strong><br>{{ detail.sport_code.name }} · {{ detail.category.name }} · {{ detail.period.name }}<br>{{ detail.period.starts_on.slice(0,10) }} – {{ detail.period.ends_on.slice(0,10) }}<br>Total: <strong>{{ money(detail.total_payable_cents) }}</strong></p><VAlert v-if="detail.guardian_name" type="info" variant="tonal"><strong>Guardian: {{ detail.guardian_name }}</strong><br>Relationship: {{ detail.guardian_relationship }}<br>Consent: {{ detail.guardian_consent ? 'Recorded' : 'Not recorded' }}<br>{{ detail.guardian_member_id ? 'Linked household guardian' : 'External guardian' }}</VAlert></template><VTextarea v-else v-model="reason" label="Rejection reason *" /><VTextarea v-model="administratorNotes" label="Administrator note (optional)" /></VCardText><VCardActions class="pa-6"><VSpacer /><VBtn variant="tonal" @click="decision = null">Cancel</VBtn><VBtn :color="decision === 'approve' ? 'success' : 'error'" :disabled="decision === 'reject' && !reason" :loading="acting" @click="runAction(decision, reason)">{{ decision === 'approve' ? 'Approve membership' : 'Confirm rejection' }}</VBtn></VCardActions></VCard></VDialog>
   </div>
 </template>
+
+<style scoped>
+.read-only-applications :deep(.v-navigation-drawer .v-btn) {
+  display: none;
+}
+</style>
