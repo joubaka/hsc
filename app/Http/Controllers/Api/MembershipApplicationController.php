@@ -34,7 +34,7 @@ class MembershipApplicationController extends Controller
         $user = $request->user();
         $codes = SportCode::with('categories')->when(! $user->isCentralAdministrator(), fn ($q) => $q->whereIn('id', $user->sportCodes()->pluck('sport_codes.id')))->get();
 
-        return response()->json(['members' => Member::orderBy('last_name')->get(['id', 'member_number', 'first_name', 'last_name', 'date_of_birth']), 'sport_codes' => $codes, 'periods' => MembershipPeriod::whereIn('status', ['draft', 'open'])->orderByDesc('starts_on')->get()]);
+        return response()->json(['members' => Member::orderBy('last_name')->get(['id', 'household_id', 'member_number', 'first_name', 'last_name', 'date_of_birth', 'email', 'mobile']), 'sport_codes' => $codes, 'periods' => MembershipPeriod::whereIn('status', ['draft', 'open'])->orderByDesc('starts_on')->get()]);
     }
 
     public function store(StoreMembershipApplicationRequest $request): JsonResponse
