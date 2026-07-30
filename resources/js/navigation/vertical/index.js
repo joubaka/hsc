@@ -24,4 +24,24 @@ export default [
     to: { name: 'renewals' },
     icon: { icon: 'tabler-refresh' },
   },
+  {
+    title: 'Invoices',
+    to: { name: 'finance-invoices' },
+    icon: { icon: 'tabler-file-invoice' },
+  },
+  {
+    title: 'Payments',
+    to: { name: 'finance-payments' },
+    icon: { icon: 'tabler-cash' },
+  },
+  {
+    title: 'Finance reports',
+    to: { name: 'finance-reports' },
+    icon: { icon: 'tabler-report-money' },
+  },
+  {
+    title: 'Financial settings',
+    to: { name: 'financial-settings' },
+    icon: { icon: 'tabler-settings-dollar' },
+  },
 ]
