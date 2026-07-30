@@ -1,11 +1,17 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CreditNoteController;
+use App\Http\Controllers\Api\FinancialReportController;
+use App\Http\Controllers\Api\FinancialSettingsController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\MembershipApplicationController;
 use App\Http\Controllers\Api\MembershipPeriodController;
 use App\Http\Controllers\Api\MembershipSetupController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RenewalController;
+use App\Http\Controllers\ReceiptPrintController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
@@ -27,6 +33,34 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('membership-applications/{membershipApplication}/action', [MembershipApplicationController::class, 'action']);
     Route::get('renewals/dashboard', [RenewalController::class, 'dashboard']);
     Route::post('renewals/bulk-drafts', [RenewalController::class, 'bulk']);
+
+    Route::get('finance/settings', [FinancialSettingsController::class, 'show']);
+    Route::put('finance/settings', [FinancialSettingsController::class, 'update']);
+    Route::get('finance/invoices', [InvoiceController::class, 'index']);
+    Route::get('finance/meta', [InvoiceController::class, 'meta']);
+    Route::post('finance/invoices', [InvoiceController::class, 'store']);
+    Route::get('finance/invoices/{invoice}', [InvoiceController::class, 'show']);
+    Route::put('finance/invoices/{invoice}', [InvoiceController::class, 'update']);
+    Route::post('finance/invoices/{invoice}/action', [InvoiceController::class, 'action']);
+    Route::post('finance/memberships/{sportMembership}/invoice', [InvoiceController::class, 'generate']);
+    Route::post('finance/membership-invoices/bulk', [InvoiceController::class, 'bulk']);
+    Route::get('finance/payments', [PaymentController::class, 'index']);
+    Route::post('finance/payments', [PaymentController::class, 'store']);
+    Route::get('finance/payments/{payment}', [PaymentController::class, 'show']);
+    Route::post('finance/payments/{payment}/confirm', [PaymentController::class, 'confirm']);
+    Route::get('finance/payments/{payment}/allocation-preview', [PaymentController::class, 'preview']);
+    Route::post('finance/payments/{payment}/allocations', [PaymentController::class, 'allocate']);
+    Route::post('finance/allocations/{allocation}/reverse', [PaymentController::class, 'reverseAllocation']);
+    Route::post('finance/payments/{payment}/reverse', [PaymentController::class, 'reverse']);
+    Route::post('finance/payments/{payment}/refund', [PaymentController::class, 'refund']);
+    Route::post('finance/invoices/{invoice}/credit-notes', [CreditNoteController::class, 'store']);
+    Route::post('finance/credit-notes/{creditNote}/issue', [CreditNoteController::class, 'issue']);
+    Route::post('finance/credit-notes/{creditNote}/apply', [CreditNoteController::class, 'apply']);
+    Route::get('finance/reports/member/{member}', [FinancialReportController::class, 'statement']);
+    Route::get('finance/reports/outstanding', [FinancialReportController::class, 'outstanding']);
+    Route::get('finance/reports/sport/{sportCode}', [FinancialReportController::class, 'sport']);
+    Route::get('finance/reports/hsc-levy', [FinancialReportController::class, 'levy']);
+    Route::get('finance/receipts/{receipt}/print', ReceiptPrintController::class);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);
