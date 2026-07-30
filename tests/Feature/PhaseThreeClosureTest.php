@@ -21,9 +21,16 @@ class PhaseThreeClosureTest extends TestCase
     public function test_archived_period_and_invalid_transition_are_protected(): void
     {
         $this->admin();
+        $draft = MembershipPeriod::factory()->create(['status' => 'draft']);
+        $this->withToken('token')->putJson("/api/membership-periods/$draft->id", [
+            'name' => 'Edited draft period',
+            'starts_on' => '2027-01-01',
+            'ends_on' => '2027-12-31',
+            'status' => 'draft',
+        ])->assertOk()->assertJsonPath('name', 'Edited draft period');
+
         $period = MembershipPeriod::factory()->create(['status' => 'archived']);
         $this->withToken('token')->putJson("/api/membership-periods/$period->id", [...$period->toArray(), 'starts_on' => '2027-01-01', 'ends_on' => '2027-12-31'])->assertForbidden();
-        $draft = MembershipPeriod::factory()->create(['status' => 'draft']);
         $this->withToken('token')->postJson("/api/membership-periods/$draft->id/transition", ['status' => 'archived'])->assertStatus(422);
     }
 
@@ -35,6 +42,26 @@ class PhaseThreeClosureTest extends TestCase
         $this->withToken('token')->postJson('/api/membership-applications', $this->payload($member, $other, $category, $period))->assertJsonValidationErrors('membership_category_id');
         $period->update(['status' => 'closed']);
         $this->withToken('token')->postJson('/api/membership-applications', $this->payload($member, $code, $category, $period))->assertJsonValidationErrors('membership_period_id');
+    }
+
+    public function test_zero_discount_does_not_require_an_override_reason(): void
+    {
+        $this->admin();
+        [$member, $code, $category, $period] = $this->domain();
+
+        $this->withToken('token')->postJson('/api/membership-applications', [
+            ...$this->payload($member, $code, $category, $period),
+            'joining_fee' => 0,
+            'discount' => 0,
+            'override_reason' => '',
+        ])->assertCreated();
+
+        $this->withToken('token')->postJson('/api/membership-applications', [
+            ...$this->payload($member, $code, $category, $period),
+            'joining_fee' => 0,
+            'discount' => 100,
+            'override_reason' => '',
+        ])->assertJsonValidationErrors('override_reason');
     }
 
     public function test_read_only_user_cannot_mutate_assigned_application(): void

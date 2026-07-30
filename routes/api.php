@@ -15,7 +15,9 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('members/meta', [MemberController::class, 'meta']);
     Route::apiResource('members', MemberController::class);
-    Route::apiResource('membership-periods', MembershipPeriodController::class)->only(['index', 'store', 'update']);
+    Route::apiResource('membership-periods', MembershipPeriodController::class)
+        ->parameters(['membership-periods' => 'membershipPeriod'])
+        ->only(['index', 'store', 'update']);
     Route::post('membership-periods/{membershipPeriod}/transition', [MembershipPeriodController::class, 'transition']);
     Route::get('membership-applications/meta', [MembershipApplicationController::class, 'meta']);
     Route::get('membership-applications/{membershipApplication}/audit', [MembershipApplicationController::class, 'audit']);
