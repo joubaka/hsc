@@ -41,6 +41,11 @@ class MembershipApplicationWorkflowTest extends TestCase
     public function test_junior_requires_guardian_and_age_is_checked_at_period_start(): void
     {
         [$application] = $this->application('2012-06-01');
+        $application->update([
+            'guardian_name' => 'Adult Guardian',
+            'guardian_email' => 'guardian@example.test',
+            'guardian_consent' => true,
+        ]);
         $this->withToken('token')->postJson("/api/membership-applications/{$application->id}/action", ['action' => 'submit'])
             ->assertUnprocessable()->assertJsonValidationErrors('guardian');
     }
@@ -63,7 +68,13 @@ class MembershipApplicationWorkflowTest extends TestCase
         $application->update(['status' => 'under_review']);
         $this->withToken('token')->postJson("/api/membership-applications/{$application->id}/action", ['action' => 'reject'])->assertStatus(422);
         $this->withToken('token')->postJson("/api/membership-applications/{$application->id}/action", ['action' => 'reject', 'reason' => 'Not eligible'])->assertOk();
+        $this->withToken('token')->postJson("/api/membership-applications/{$application->id}/action", ['action' => 'submit'])->assertForbidden();
         $this->assertSame(0, SportMembership::count());
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_id' => $application->id,
+            'action' => 'membership_application.rejected',
+            'new_values->rejection_reason' => 'Not eligible',
+        ]);
     }
 
     public function test_cross_code_application_view_and_approval_are_blocked(): void

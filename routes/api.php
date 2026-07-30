@@ -21,7 +21,9 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('membership-periods/{membershipPeriod}/transition', [MembershipPeriodController::class, 'transition']);
     Route::get('membership-applications/meta', [MembershipApplicationController::class, 'meta']);
     Route::get('membership-applications/{membershipApplication}/audit', [MembershipApplicationController::class, 'audit']);
-    Route::apiResource('membership-applications', MembershipApplicationController::class)->only(['index', 'store', 'show', 'update']);
+    Route::apiResource('membership-applications', MembershipApplicationController::class)
+        ->parameters(['membership-applications' => 'membershipApplication'])
+        ->only(['index', 'store', 'show', 'update']);
     Route::post('membership-applications/{membershipApplication}/action', [MembershipApplicationController::class, 'action']);
     Route::get('renewals/dashboard', [RenewalController::class, 'dashboard']);
     Route::post('renewals/bulk-drafts', [RenewalController::class, 'bulk']);

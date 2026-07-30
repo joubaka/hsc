@@ -113,7 +113,7 @@ class MembershipApplicationService
         if ($age !== null && $application->category->maximum_age !== null && $age > $application->category->maximum_age) {
             throw ValidationException::withMessages(['membership_category_id' => 'Member exceeds the maximum age at the period start.']);
         }
-        if ($age !== null && $age < 18 && (! $application->guardian_consent || ! $application->guardian_name || (! $application->guardian_email && ! $application->guardian_mobile))) {
+        if ($age !== null && $age < 18 && (! $application->guardian_consent || ! $application->guardian_name || ! $application->guardian_relationship || (! $application->guardian_email && ! $application->guardian_mobile))) {
             throw ValidationException::withMessages(['guardian' => 'A consenting guardian with usable contact information is required for a junior.']);
         }
         if ($age !== null && $age < 18 && $application->guardian_member_id) {

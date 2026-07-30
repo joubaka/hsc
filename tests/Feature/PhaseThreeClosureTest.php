@@ -73,6 +73,42 @@ class PhaseThreeClosureTest extends TestCase
         $this->withToken('token')->postJson("/api/membership-applications/$application->id/action", ['action' => 'submit'])->assertForbidden();
     }
 
+    public function test_information_required_update_changes_only_permitted_fields(): void
+    {
+        $this->admin();
+        [$member, $code, $category, $period] = $this->domain();
+        $otherCategory = MembershipCategory::create([
+            'sport_code_id' => $code->id,
+            'name' => 'Social',
+            'code_fee_cents' => 50000,
+            'hsc_levy_cents' => 20000,
+            'billing_period' => 'annual',
+            'active' => true,
+        ]);
+        $application = MembershipApplication::create([
+            ...$this->payload($member, $code, $category, $period),
+            'status' => 'information_required',
+            'sport_code_fee_cents' => 100000,
+            'hsc_levy_cents' => 20000,
+            'joining_fee_cents' => 0,
+            'discount_cents' => 0,
+            'total_payable_cents' => 120000,
+        ]);
+
+        $this->withToken('token')->putJson("/api/membership-applications/$application->id", [
+            'applicant_notes' => 'Requested evidence supplied.',
+            'membership_category_id' => $otherCategory->id,
+            'joining_fee' => 9999,
+            'discount' => 9999,
+        ])->assertOk()->assertJsonPath('applicant_notes', 'Requested evidence supplied.');
+
+        $application->refresh();
+        $this->assertSame($category->id, $application->membership_category_id);
+        $this->assertSame(0, $application->joining_fee_cents);
+        $this->assertSame(0, $application->discount_cents);
+        $this->assertSame(120000, $application->total_payable_cents);
+    }
+
     public function test_linked_guardian_must_be_adult_in_same_household(): void
     {
         $this->admin();
