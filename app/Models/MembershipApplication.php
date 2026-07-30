@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class MembershipApplication extends Model
 {
+    use HasFactory;
+
     protected $guarded = [];
 
     protected $appends = ['fee_total'];
