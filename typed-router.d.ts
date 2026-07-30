@@ -21,7 +21,10 @@ declare module 'vue-router/auto-routes' {
     'root': RouteRecordInfo<'root', '/', Record<never, never>, Record<never, never>>,
     '$error': RouteRecordInfo<'$error', '/:error(.*)', { error: ParamValue<true> }, { error: ParamValue<false> }>,
     'login': RouteRecordInfo<'login', '/login', Record<never, never>, Record<never, never>>,
+    'membership-applications': RouteRecordInfo<'membership-applications', '/membership-applications', Record<never, never>, Record<never, never>>,
+    'membership-periods': RouteRecordInfo<'membership-periods', '/membership-periods', Record<never, never>, Record<never, never>>,
     'membership-setup': RouteRecordInfo<'membership-setup', '/membership-setup', Record<never, never>, Record<never, never>>,
+    'renewals': RouteRecordInfo<'renewals', '/renewals', Record<never, never>, Record<never, never>>,
     'second-page': RouteRecordInfo<'second-page', '/second-page', Record<never, never>, Record<never, never>>,
   }
 }
