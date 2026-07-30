@@ -4,6 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Household;
 use App\Models\Member;
+use App\Models\MembershipApplication;
+use App\Models\MembershipPeriod;
 use App\Models\SportCode;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -88,6 +90,32 @@ class DatabaseSeeder extends Seeder
             'status' => 'active',
             'areas' => ['main_entrance', 'clubhouse', 'tennis_courts', 'padel_courts'],
             'issued_at' => now(),
+        ]);
+
+        $period = MembershipPeriod::create([
+            'name' => now()->year.' Membership Year',
+            'starts_on' => now()->startOfYear()->toDateString(),
+            'ends_on' => now()->endOfYear()->toDateString(),
+            'applications_open_on' => now()->subMonth()->toDateString(),
+            'applications_close_on' => now()->addMonths(2)->toDateString(),
+            'renewal_deadline' => now()->addMonth()->toDateString(),
+            'status' => 'open',
+        ]);
+        MembershipApplication::create([
+            'member_id' => $anna->id,
+            'sport_code_id' => $codes['squash']->id,
+            'membership_category_id' => $codes['squash']->categories()->where('name', 'Full')->value('id'),
+            'membership_period_id' => $period->id,
+            'application_type' => 'additional_sport',
+            'status' => 'draft',
+        ]);
+        MembershipApplication::create([
+            'member_id' => $anna->id,
+            'sport_code_id' => $codes['tennis']->id,
+            'membership_category_id' => $codes['tennis']->categories()->where('name', 'Full')->value('id'),
+            'membership_period_id' => $period->id,
+            'application_type' => 'renewal',
+            'status' => 'draft',
         ]);
 
         if ($password = env('HSC_ADMIN_PASSWORD')) {

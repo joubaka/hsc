@@ -14,4 +14,14 @@ export default [
     to: { name: 'membership-periods' },
     icon: { icon: 'tabler-calendar-stats' },
   },
+  {
+    title: 'Applications',
+    to: { name: 'membership-applications' },
+    icon: { icon: 'tabler-clipboard-check' },
+  },
+  {
+    title: 'Renewals',
+    to: { name: 'renewals' },
+    icon: { icon: 'tabler-refresh' },
+  },
 ]
