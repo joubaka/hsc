@@ -203,6 +203,7 @@ class LightingWorkflowTest extends TestCase
 
         $response = $this->withToken('lighting-admin-token')->getJson('/api/lighting')->assertOk();
         $response->assertJsonPath('devices.0.credentials_configured', true);
+        $response->assertJsonStructure(['zones' => [['future_reservations_count']]]);
         $body = $response->getContent();
         $this->assertStringNotContainsString('dashboard-secret-user', $body);
         $this->assertStringNotContainsString('dashboard-secret-password', $body);
