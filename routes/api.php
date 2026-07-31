@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\BookingPolicyController;
 use App\Http\Controllers\Api\BookingRefundController;
+use App\Http\Controllers\Api\BookingSeriesController;
 use App\Http\Controllers\Api\CreditNoteController;
 use App\Http\Controllers\Api\FacilityController;
 use App\Http\Controllers\Api\FacilityScheduleController;
@@ -87,6 +88,12 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel']);
     Route::get('booking/refund-requests', [BookingRefundController::class, 'index']);
     Route::post('booking/refund-requests/{refundRequest}/complete', [BookingRefundController::class, 'complete']);
+    Route::get('booking-series', [BookingSeriesController::class, 'index']);
+    Route::post('booking-series', [BookingSeriesController::class, 'store']);
+    Route::get('booking-series/{bookingSeries}', [BookingSeriesController::class, 'show']);
+    Route::get('booking-series/{bookingSeries}/preview', [BookingSeriesController::class, 'preview']);
+    Route::post('booking-series/{bookingSeries}/submit', [BookingSeriesController::class, 'submit']);
+    Route::post('booking-series/{bookingSeries}/action', [BookingSeriesController::class, 'action']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);

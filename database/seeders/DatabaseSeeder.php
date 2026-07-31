@@ -351,13 +351,15 @@ class DatabaseSeeder extends Seeder
             throw new \RuntimeException('HSC_ADMIN_PASSWORD_HASH must contain a valid password hash before seeding the protected super-administrator account.');
         }
 
-        User::updateOrCreate(['email' => $adminEmail], [
+        $admin = User::firstOrNew(['email' => $adminEmail]);
+        $admin->forceFill([
             'name' => 'HSC Super Administrator',
-            'password' => $adminPasswordHash,
             'role' => 'hsc_super_admin',
             'active' => true,
             'protected_account' => true,
             'email_verified_at' => now(),
         ]);
+        $admin->setRawAttributes([...$admin->getAttributes(), 'password' => $adminPasswordHash]);
+        $admin->save();
     }
 }

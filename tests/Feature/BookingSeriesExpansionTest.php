@@ -2,12 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Models\Booking;
+use App\Models\BookingSeries;
+use App\Models\Facility;
+use App\Models\Member;
+use App\Models\User;
 use App\Services\BookingRecurrenceExpansionService;
+use Database\Seeders\DatabaseSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class BookingSeriesExpansionTest extends TestCase
 {
+    use RefreshDatabase;
+
     private BookingRecurrenceExpansionService $service;
 
     protected function setUp(): void
@@ -92,6 +102,36 @@ class BookingSeriesExpansionTest extends TestCase
                 $this->addToAssertionCount(1);
             }
         }
+    }
+
+    public function test_series_preview_submission_and_approval_materialize_normal_bookings_idempotently(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $admin = User::where('email', 'admin@hsc.local')->firstOrFail();
+        $admin->update(['api_token_hash' => hash('sha256', 'series-admin')]);
+        $member = Member::where('member_number', 'HSC-00001')->firstOrFail();
+        $facility = Facility::where('code', 'TEN-1')->firstOrFail();
+        $facility->openingHours()->update(['opens_at' => '00:00:00', 'closes_at' => '23:59:59']);
+        $payload = [
+            'facility_id' => $facility->id, 'sport_code_id' => $facility->sport_code_id, 'member_id' => $member->id,
+            'series_type' => 'coach_block', 'starts_on' => now()->addDays(3)->toDateString(), 'start_time' => '10:00',
+            'duration_minutes' => 60, 'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'daily',
+            'recurrence_interval' => 1, 'occurrence_limit' => 2, 'guest_count' => 0,
+            'billing_strategy' => 'invoice_each_occurrence', 'idempotency_key' => (string) Str::uuid(),
+        ];
+
+        $series = $this->withToken('series-admin')->postJson('/api/booking-series', $payload)->assertCreated()->json();
+        $this->withToken('series-admin')->getJson("/api/booking-series/{$series['id']}/preview")
+            ->assertOk()->assertJsonPath('summary.requested', 2)->assertJsonPath('summary.available', 2);
+        $this->withToken('series-admin')->postJson("/api/booking-series/{$series['id']}/submit")->assertOk();
+        $first = $this->withToken('series-admin')->postJson("/api/booking-series/{$series['id']}/action", ['action' => 'approve'])
+            ->assertOk()->assertJsonPath('materialization.created', 2);
+        $second = $this->withToken('series-admin')->postJson("/api/booking-series/{$series['id']}/action", ['action' => 'approve']);
+
+        $this->assertDatabaseCount('booking_series_occurrences', 2);
+        $this->assertSame(2, Booking::whereIn('id', BookingSeries::find($series['id'])->occurrences()->pluck('booking_id'))->count());
+        $this->assertTrue(collect($first->json('materialization.outcomes'))->every(fn ($row) => $row['outcome'] === 'created'));
+        $second->assertUnprocessable();
     }
 
     private function definition(array $overrides = []): array

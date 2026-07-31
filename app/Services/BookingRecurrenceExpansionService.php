@@ -27,8 +27,9 @@ class BookingRecurrenceExpansionService
         $interval = max(1, (int) ($v['recurrence_interval'] ?? 1));
         while ((! $end || $cursor->lte($end)) && (! $limit || count($dates) < $limit) && count($dates) < self::MAX_OCCURRENCES) {
             if ($this->matches($cursor, $start, $frequency, $interval, $v)) {
-                $local = Carbon::parse($cursor->toDateString().' '.$v['start_time'], $v['timezone']);
-                if ($local->format('Y-m-d H:i:s') !== $cursor->toDateString().' '.substr($v['start_time'], 0, 8)) {
+                $localTime = Carbon::parse($v['start_time'])->format('H:i:s');
+                $local = Carbon::parse($cursor->toDateString().' '.$localTime, $v['timezone']);
+                if ($local->format('Y-m-d H:i:s') !== $cursor->toDateString().' '.$localTime) {
                     throw ValidationException::withMessages(['start_time' => "The local time does not exist on {$cursor->toDateString()}."]);
                 }
                 $dates[] = ['number' => count($dates) + 1, 'scheduled_date' => $cursor->toDateString(), 'starts_at' => $local, 'ends_at' => $local->copy()->addMinutes((int) $v['duration_minutes'])];
