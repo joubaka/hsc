@@ -60,6 +60,10 @@ class BookingSeriesMaterializationService
                         'booking_series_id' => $series->id,
                         'booking_series_occurrence_id' => $occurrence->id,
                     ]);
+                    app(BookingCheckInService::class)->ensure($booking);
+                    app(BookingCheckInService::class)->issueToken($booking, 'booking_qr');
+                    $grants = app(BookingAccessGrantService::class)->ensure($booking, app(BookingCheckInPolicyResolver::class)->resolve($booking, $actor));
+                    collect($grants)->each->update(['booking_series_occurrence_id' => $occurrence->id]);
                     $outcomes[] = ['occurrence_number' => $row['occurrence_number'], 'outcome' => 'created', 'booking_id' => $booking->id, 'booking_reference' => $booking->booking_reference, 'occurrence_id' => $occurrence->id];
                 } catch (\Throwable $e) {
                     if (! $partial) {

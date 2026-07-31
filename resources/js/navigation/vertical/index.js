@@ -74,4 +74,9 @@ export default [
     to: { name: 'lighting' },
     icon: { icon: 'tabler-bulb' },
   },
+  {
+    title: 'Check-in operations',
+    to: { name: 'check-in-operations' },
+    icon: { icon: 'tabler-door-enter' },
+  },
 ]

@@ -32,6 +32,9 @@ class BookingOccurrenceAmendmentService
         return DB::transaction(function () use ($actor, $occurrence, $changes, $idempotencyKey, $reason) {
             $occurrence = BookingSeriesOccurrence::lockForUpdate()->findOrFail($occurrence->id);
             $booking = Booking::lockForUpdate()->findOrFail($occurrence->booking_id);
+            if (in_array($booking->attendance?->status, ['checked_in', 'late_checked_in'], true)) {
+                abort_unless(app(BookingAccessService::class)->canManage($actor, $booking->facility) && filled($reason), 422, 'A checked-in booking requires an administrator override reason.');
+            }
             abort_unless(in_array($booking->status, ['confirmed', 'pending_payment'], true) && $booking->starts_at->isFuture(), 422, 'Only future active occurrences may be amended.');
             $own = $actor->member_id && (int) $booking->member_id === (int) $actor->member_id;
             abort_unless($actor->active && ($own || app(BookingAccessService::class)->canManage($actor, $booking->facility)), 403);
@@ -44,6 +47,8 @@ class BookingOccurrenceAmendmentService
             $result = $this->evaluator->evaluate($actor, $member, $facility, $start, $end, (int) ($changes['guest_count'] ?? $booking->guest_count), null, $booking->id, $lightingRequested);
             abort_unless($result['eligible'], 422, $result['failures'][0]['member_message'] ?? 'The replacement slot is unavailable.');
             $old = $booking->only(['facility_id', 'starts_at', 'ends_at', 'duration_minutes', 'total_amount', 'allowance_amount']);
+            app(BookingCheckInService::class)->revokeTokens($booking);
+            app(BookingAccessGrantService::class)->revoke($booking, 'booking_amended');
             $difference = (int) $result['price']['total_amount'] - (int) $booking->total_amount;
             $this->financialDifference($actor, $booking, $occurrence, $difference, $result['price'], $reason);
             $booking->update([
@@ -69,6 +74,11 @@ class BookingOccurrenceAmendmentService
                 'status' => 'confirmed', 'exception_type' => 'rescheduled', 'mutation_idempotency_key' => $idempotencyKey,
                 'preview_snapshot' => [...$result, 'amendment_reason' => $reason],
             ]);
+            if ($booking->attendance && ! in_array($booking->attendance->status, ['checked_in', 'late_checked_in'], true)) {
+                $booking->attendance()->delete();
+                app(BookingCheckInService::class)->ensure($booking->fresh());
+            }
+            app(BookingAccessGrantService::class)->ensure($booking->fresh('facility.accessZones'), app(BookingCheckInPolicyResolver::class)->resolve($booking->fresh(), $actor));
             BookingSeriesMutation::create([
                 'booking_series_id' => $occurrence->booking_series_id, 'booking_series_occurrence_id' => $occurrence->id,
                 'initiated_by_user_id' => $actor->id, 'mutation_type' => 'occurrence_amendment', 'scope' => 'occurrence',
