@@ -215,4 +215,40 @@ class LightingWorkflowTest extends TestCase
         $this->withToken('lighting-member-token')->getJson('/api/lighting')->assertForbidden();
         $this->assertTrue($member->active);
     }
+
+    public function test_live_device_configuration_requires_exact_confirmation_and_safe_host(): void
+    {
+        User::factory()->create([
+            'role' => 'hsc_super_admin',
+            'active' => true,
+            'api_token_hash' => hash('sha256', 'lighting-live-admin'),
+        ]);
+        $payload = [
+            'name' => 'Safety gate device',
+            'code' => 'LIGHT-SAFETY-GATE',
+            'provider' => 'shelly',
+            'enabled' => false,
+            'dry_run' => false,
+            'network_host' => null,
+        ];
+
+        $this->withToken('lighting-live-admin')->postJson('/api/lighting/devices', $payload)
+            ->assertUnprocessable()
+            ->assertJsonMissing(['network_host', 'password']);
+        $this->withToken('lighting-live-admin')->postJson('/api/lighting/devices', [
+            ...$payload,
+            'network_host' => 'lights.local/rpc',
+            'live_confirmation' => 'ENABLE LIVE LIGHTING',
+        ])->assertUnprocessable();
+        $created = $this->withToken('lighting-live-admin')->postJson('/api/lighting/devices', [
+            ...$payload,
+            'live_confirmation' => 'ENABLE LIVE LIGHTING',
+        ])->assertCreated()->assertJsonMissing(['username', 'password'])->json();
+
+        $this->assertFalse($created['dry_run']);
+        $this->withToken('lighting-live-admin')->putJson("/api/lighting/devices/{$created['id']}", [
+            ...$payload,
+            'dry_run' => true,
+        ])->assertOk()->assertJsonPath('dry_run', true);
+    }
 }
