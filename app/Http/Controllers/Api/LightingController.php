@@ -28,7 +28,7 @@ class LightingController extends Controller
 {
     public function dashboard(Request $r): JsonResponse
     {
-        $this->authorize('viewAny', LightingZone::class);
+        abort_unless($r->user()->can('viewAny', LightingZone::class), 403);
         $sports = $r->user()->isCentralAdministrator() ? null : $r->user()->sportCodes()->pluck('sport_codes.id');
         $zones = LightingZone::with(['facilities:id,name,code', 'channel.device:id,name,code,provider,enabled,dry_run,last_health_status'])->when($sports, fn ($q) => $q->whereIn('sport_code_id', $sports))->get();
 
@@ -64,7 +64,7 @@ class LightingController extends Controller
 
     public function updateDevice(StoreLightingDeviceRequest $r, LightingDevice $lightingDevice, LightingHostValidator $hosts): JsonResponse
     {
-        $this->authorize('update', $lightingDevice);
+        abort_unless($r->user()->can('update', $lightingDevice), 403);
         $d = $r->validated();
         $this->guardLiveDevice($r, $d);
         unset($d['live_confirmation']);
@@ -82,7 +82,7 @@ class LightingController extends Controller
 
     public function channel(Request $r, LightingDevice $lightingDevice): JsonResponse
     {
-        $this->authorize('update', $lightingDevice);
+        abort_unless($r->user()->can('update', $lightingDevice), 403);
         $d = $r->validate(['channel_number' => 'required|integer|between:0,15', 'name' => 'required|string|max:120', 'enabled' => 'boolean', 'maximum_continuous_on_minutes' => 'integer|between:15,480']);
         $channel = $lightingDevice->channels()->updateOrCreate(['channel_number' => $d['channel_number']], $d);
 
@@ -91,7 +91,7 @@ class LightingController extends Controller
 
     public function test(LightingDevice $lightingDevice): JsonResponse
     {
-        $this->authorize('operate', $lightingDevice);
+        abort_unless(request()->user()->can('operate', $lightingDevice), 403);
         $channel = $lightingDevice->channels()->where('enabled', true)->firstOrFail();
         $start = microtime(true);
         $result = app(LightingProviderResolver::class)->resolve($channel)->healthCheck(LightingEndpoint::fromChannel($channel));
@@ -154,7 +154,7 @@ class LightingController extends Controller
 
     public function tariff(Request $r, LightingZone $lightingZone): JsonResponse
     {
-        $this->authorize('update', $lightingZone);
+        abort_unless($r->user()->can('update', $lightingZone), 403);
         $d = $r->validate(['name' => 'required|string|max:120', 'pricing_method' => 'required|in:fixed,hourly,per_minute', 'amount_cents' => 'required|integer|min:0|max:1000000', 'profile' => 'nullable|string|max:40', 'starts_at' => 'nullable|date_format:H:i', 'ends_at' => 'nullable|date_format:H:i', 'minimum_minutes' => 'integer|between:1,240', 'increment_minutes' => 'integer|between:1,60', 'financial_owner_type' => 'required|in:sport_code,central_hsc', 'active' => 'boolean', 'priority' => 'integer|between:0,1000']);
         $t = $lightingZone->tariffs()->create([...$d, 'version' => 1]);
         Audit::record('lighting.tariff_created', $t, [], collect($d)->except('amount_cents')->all() + ['amount_changed' => true]);
@@ -164,7 +164,7 @@ class LightingController extends Controller
 
     public function policy(Request $r, LightingZone $lightingZone): JsonResponse
     {
-        $this->authorize('update', $lightingZone);
+        abort_unless($r->user()->can('update', $lightingZone), 403);
         $d = $r->validate(['strategy' => 'required|in:manual,fixed_band,always_required,never_available', 'starts_at' => 'nullable|required_if:strategy,fixed_band|date_format:H:i', 'ends_at' => 'nullable|required_if:strategy,fixed_band|date_format:H:i', 'profile' => 'nullable|string|max:40', 'active' => 'boolean', 'priority' => 'integer|between:0,1000']);
 
         return response()->json($lightingZone->policies()->create([...$d, 'version' => 1]), 201);
@@ -191,7 +191,7 @@ class LightingController extends Controller
 
     public function reports(Request $r): JsonResponse
     {
-        $this->authorize('viewAny', LightingZone::class);
+        abort_unless($r->user()->can('viewAny', LightingZone::class), 403);
 
         return response()->json(['usage' => LightingReservation::selectRaw('lighting_zone_id, count(*) booking_count, sum(billable_minutes) scheduled_minutes, sum(amount) amount')->groupBy('lighting_zone_id')->get(), 'reliability' => LightingCommand::selectRaw('status,count(*) total')->groupBy('status')->pluck('total', 'status'), 'revenue' => LightingTariff::count()]);
     }
