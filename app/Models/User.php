@@ -26,6 +26,7 @@ class User extends Authenticatable
         'member_id',
         'role',
         'active',
+        'protected_account',
         'last_login_at',
         'api_token_hash',
     ];
@@ -52,6 +53,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'active' => 'boolean',
+            'protected_account' => 'boolean',
             'last_login_at' => 'datetime',
         ];
     }
@@ -88,5 +90,29 @@ class User extends Authenticatable
             ->where('sport_codes.id', $sportCodeId)
             ->when($write, fn ($query) => $query->whereIn('sport_code_user.role', ['administrator', 'committee']))
             ->exists();
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (User $user) {
+            if (! $user->getOriginal('protected_account')) {
+                return;
+            }
+
+            if (
+                $user->isDirty('email')
+                || $user->role !== 'hsc_super_admin'
+                || ! $user->active
+                || ! $user->protected_account
+            ) {
+                throw new \LogicException('The protected HSC super-administrator account cannot be disabled, demoted, or renamed.');
+            }
+        });
+
+        static::deleting(function (User $user) {
+            if ($user->protected_account) {
+                throw new \LogicException('The protected HSC super-administrator account cannot be deleted.');
+            }
+        });
     }
 }

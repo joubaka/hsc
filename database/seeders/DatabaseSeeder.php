@@ -344,14 +344,20 @@ class DatabaseSeeder extends Seeder
             'cancellation_reason' => 'Seed demonstration',
         ]);
 
-        if ($password = env('HSC_ADMIN_PASSWORD')) {
-            User::updateOrCreate(['email' => env('HSC_ADMIN_EMAIL', 'admin@hsc.local')], [
-                'name' => 'HSC Super Administrator',
-                'password' => $password,
-                'role' => 'hsc_super_admin',
-                'active' => true,
-                'email_verified_at' => now(),
-            ]);
+        $adminEmail = env('HSC_ADMIN_EMAIL', 'admin@hsc.local');
+        $adminPasswordHash = env('HSC_ADMIN_PASSWORD_HASH');
+
+        if (! $adminPasswordHash || ! Hash::info($adminPasswordHash)['algo']) {
+            throw new \RuntimeException('HSC_ADMIN_PASSWORD_HASH must contain a valid password hash before seeding the protected super-administrator account.');
         }
+
+        User::updateOrCreate(['email' => $adminEmail], [
+            'name' => 'HSC Super Administrator',
+            'password' => $adminPasswordHash,
+            'role' => 'hsc_super_admin',
+            'active' => true,
+            'protected_account' => true,
+            'email_verified_at' => now(),
+        ]);
     }
 }

@@ -33,6 +33,30 @@ class AdministrationSecurityTest extends TestCase
         ])->assertUnprocessable();
     }
 
+    public function test_protected_super_administrator_cannot_be_disabled_or_demoted(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'hsc_super_admin',
+            'active' => true,
+            'protected_account' => true,
+        ]);
+
+        $this->expectException(\LogicException::class);
+        $user->update(['active' => false, 'role' => 'member']);
+    }
+
+    public function test_protected_super_administrator_cannot_be_deleted(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'hsc_super_admin',
+            'active' => true,
+            'protected_account' => true,
+        ]);
+
+        $this->expectException(\LogicException::class);
+        $user->delete();
+    }
+
     public function test_sport_administrator_sees_only_assigned_sport_code(): void
     {
         [$user, $tennis, $padel] = $this->sportAdministrator();
