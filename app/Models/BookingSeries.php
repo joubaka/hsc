@@ -30,6 +30,21 @@ class BookingSeries extends Model
         return $this->hasMany(BookingSeriesOccurrence::class);
     }
 
+    public function predecessor()
+    {
+        return $this->belongsTo(self::class, 'predecessor_series_id');
+    }
+
+    public function successor()
+    {
+        return $this->belongsTo(self::class, 'successor_series_id');
+    }
+
+    public function root()
+    {
+        return $this->belongsTo(self::class, 'root_series_id');
+    }
+
     protected static function booted(): void
     {
         static::deleting(fn (self $series) => ($series->status === 'draft' && ! $series->occurrences()->exists()) ?: throw new \LogicException('Materialized or non-draft series cannot be deleted.'));

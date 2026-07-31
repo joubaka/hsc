@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Booking;
+use App\Models\BookingSeries;
 use App\Support\BookingCancellationFinancialDecision;
 use Illuminate\Support\Carbon;
 
@@ -16,10 +17,21 @@ class BookingCancellationDecisionService
         $beforeDeadline = isset($snapshot['cancellation_deadline'])
             && now()->lte(Carbon::parse($snapshot['cancellation_deadline']));
         $percentage = max(0, min(100, $beforeDeadline ? (int) ($snapshot['refund_percentage'] ?? 0) : 0));
-        $charged = (int) ($invoice?->total_amount ?? $booking->total_amount);
-        $paid = (int) ($invoice?->allocations()->whereNull('reversed_at')->sum('amount') ?? 0);
-        $credited = (int) ($invoice?->creditNotes()->whereIn('status', ['issued', 'partially_applied', 'applied'])->sum('total_amount') ?? 0);
-        $refunded = (int) abs($invoice?->transactions()->where('transaction_type', 'booking_refund')->sum('amount') ?? 0);
+        $seriesInvoice = $invoice?->source_type === BookingSeries::class;
+        $bookingLines = $seriesInvoice
+            ? $invoice->lines->where('source_type', Booking::class)->where('source_id', $booking->id)->values()
+            : ($invoice?->lines ?? collect());
+        $charged = (int) ($seriesInvoice ? $bookingLines->sum('total_amount') : ($invoice?->total_amount ?? $booking->total_amount));
+        $invoicePaid = (int) ($invoice?->allocations()->whereNull('reversed_at')->sum('amount') ?? 0);
+        $preceding = $seriesInvoice
+            ? (int) $invoice->lines->where('id', '<', $bookingLines->min('id'))->sum('total_amount')
+            : 0;
+        $paid = $seriesInvoice ? max(0, min($charged, $invoicePaid - $preceding)) : $invoicePaid;
+        $lineIds = $bookingLines->pluck('id');
+        $credited = $seriesInvoice
+            ? (int) \App\Models\CreditNoteLine::whereIn('invoice_line_id', $lineIds)->whereHas('creditNote', fn ($query) => $query->whereIn('status', ['issued', 'partially_applied', 'applied']))->sum('amount')
+            : (int) ($invoice?->creditNotes()->whereIn('status', ['issued', 'partially_applied', 'applied'])->sum('total_amount') ?? 0);
+        $refunded = (int) \App\Models\BookingRefundRequest::where('booking_id', $booking->id)->where('status', 'processed')->sum('processed_amount');
         $eligible = min(intdiv($charged * $percentage, 100), $paid, max(0, $paid - $credited - $refunded));
         $method = $snapshot['refund_method'] ?? 'credit';
         $allowanceMinutes = $booking->allowanceUsage && ! $booking->allowanceUsage->restored_at
@@ -36,7 +48,7 @@ class BookingCancellationDecisionService
             $booking->id, $invoice?->id, $charged, $paid, $refunded, $credited, $eligible, $outcome,
             $percentage, $allowanceMinutes, ($snapshot['policy_ids'] ?? [null])[0] ?? null,
             $snapshot['version'] ?? null, $beforeDeadline ? ($snapshot['policy_band'] ?? 'before_deadline') : 'late_cancellation',
-            $this->allocateOwners($invoice?->lines ?? collect(), $eligible), $review, $explanation,
+            $this->allocateOwners($bookingLines, $eligible), $review, $explanation,
             "booking-cancellation:{$booking->id}", $invoice?->currency ?? $booking->currency,
         );
     }

@@ -5,9 +5,12 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\BookingSeries;
 use App\Models\Facility;
+use App\Models\Invoice;
 use App\Models\Member;
 use App\Models\User;
+use App\Services\BookingFinancialCompensationService;
 use App\Services\BookingRecurrenceExpansionService;
+use App\Services\PaymentService;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -132,6 +135,52 @@ class BookingSeriesExpansionTest extends TestCase
         $this->assertSame(2, Booking::whereIn('id', BookingSeries::find($series['id'])->occurrences()->pluck('booking_id'))->count());
         $this->assertTrue(collect($first->json('materialization.outcomes'))->every(fn ($row) => $row['outcome'] === 'created'));
         $second->assertUnprocessable();
+    }
+
+    public function test_series_invoice_is_traceable_idempotent_and_one_occurrence_credit_is_isolated(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $admin = User::where('email', 'admin@hsc.local')->firstOrFail();
+        $admin->update(['api_token_hash' => hash('sha256', 'series-finance')]);
+        $member = Member::where('member_number', 'HSC-00001')->firstOrFail();
+        $facility = Facility::where('code', 'TEN-1')->firstOrFail();
+        $facility->openingHours()->update(['opens_at' => '00:00:00', 'closes_at' => '23:59:59']);
+        $payload = [
+            'facility_id' => $facility->id, 'sport_code_id' => $facility->sport_code_id, 'member_id' => $member->id,
+            'series_type' => 'league_team', 'starts_on' => now()->addDays(4)->toDateString(), 'start_time' => '09:00',
+            'duration_minutes' => 60, 'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'daily',
+            'recurrence_interval' => 1, 'occurrence_limit' => 3, 'guest_count' => 0,
+            'billing_strategy' => 'one_invoice_for_series', 'idempotency_key' => (string) Str::uuid(),
+        ];
+        $series = $this->withToken('series-finance')->postJson('/api/booking-series', $payload)->assertCreated()->json();
+        $this->withToken('series-finance')->postJson("/api/booking-series/{$series['id']}/submit")->assertOk();
+        $approval = $this->withToken('series-finance')->postJson("/api/booking-series/{$series['id']}/action", ['action' => 'approve'])
+            ->assertOk()->assertJsonPath('materialization.created', 3);
+
+        $invoice = Invoice::findOrFail($approval->json('materialization.invoice.id'));
+        $originalTotal = $invoice->total_amount;
+        $this->assertCount(3, $invoice->lines);
+        $this->assertSame(3, $invoice->lines->pluck('source_id')->unique()->count());
+        $this->assertSame($originalTotal, (int) $invoice->lines->sum('total_amount'));
+        $payment = app(PaymentService::class)->record($admin, [
+            'member_id' => $member->id, 'payment_reference' => 'PAY-SERIES-TEST', 'payer_name' => 'Series test',
+            'received_on' => now()->toDateString(), 'payment_method' => 'eft', 'source' => 'manual',
+            'currency' => 'ZAR', 'amount' => $originalTotal,
+        ]);
+        app(PaymentService::class)->confirm($admin, $payment);
+        app(PaymentService::class)->allocate($admin, $payment, $invoice, $originalTotal, 'series-payment-allocation');
+        $occurrences = BookingSeries::findOrFail($series['id'])->occurrences()->with('booking')->orderBy('occurrence_number')->get();
+        $cancelledBooking = $occurrences[1]->booking;
+        $compensation = app(BookingFinancialCompensationService::class)->cancel($admin, $cancelledBooking, 'Series occurrence cancellation', (string) Str::uuid());
+        $repeat = app(BookingFinancialCompensationService::class)->cancel($admin, $cancelledBooking->fresh(), 'Repeated cancellation', (string) Str::uuid());
+
+        $this->assertSame($cancelledBooking->total_amount, $compensation->eligible_amount);
+        $this->assertSame($compensation->id, $repeat->id);
+        $this->assertSame($originalTotal, $invoice->fresh()->total_amount);
+        $this->assertSame('cancelled', $cancelledBooking->fresh()->status);
+        $this->assertSame('pending_payment', $occurrences[0]->booking->fresh()->status);
+        $this->assertSame('pending_payment', $occurrences[2]->booking->fresh()->status);
+        $this->assertDatabaseCount('credit_notes', 1);
     }
 
     private function definition(array $overrides = []): array

@@ -45,13 +45,13 @@ class BookingService
         });
     }
 
-    public function confirm(User $user, BookingHold $hold, string $confirmationKey, array $participants = []): Booking
+    public function confirm(User $user, BookingHold $hold, string $confirmationKey, array $participants = [], string $billingStrategy = 'invoice_each_occurrence'): Booking
     {
         if ($existing = Booking::where('confirmation_key', $confirmationKey)->orWhere('booking_hold_id', $hold->id)->first()) {
             return $existing->load(['facility', 'invoice']);
         }
 
-        return DB::transaction(function () use ($user, $hold, $confirmationKey, $participants) {
+        return DB::transaction(function () use ($user, $hold, $confirmationKey, $participants, $billingStrategy) {
             $hold = BookingHold::lockForUpdate()->findOrFail($hold->id);
             abort_unless($hold->user_id === $user->id || $user->isCentralAdministrator(), 403);
             abort_unless($hold->status === 'active' && $hold->expires_at->isFuture(), 422, 'This booking hold has expired.');
@@ -60,12 +60,19 @@ class BookingService
             $result = $this->evaluator->evaluate($user, $member, $facility, $hold->starts_at, $hold->ends_at, (int) ($hold->price_snapshot['guest_count'] ?? 0), $hold->id);
             abort_unless($result['eligible'], 422, $result['failures'][0]['member_message'] ?? 'This booking can no longer be confirmed.');
             abort_unless($result['price']['total_amount'] === $hold->price_snapshot['total_amount'], 422, 'The booking price changed. Please create a new hold.');
+            abort_if($billingStrategy === 'allowance_covered' && ($result['allowance']['minutes'] ?? 0) < $hold->starts_at->diffInMinutes($hold->ends_at), 422, 'This occurrence is not fully covered by allowance.');
+            if ($billingStrategy === 'no_charge') {
+                $result['price']['allowance_amount'] = $result['price']['gross_amount'];
+                $result['price']['total_amount'] = 0;
+                $result['allowance']['minutes'] = 0;
+                $result['allowance']['value_cents'] = 0;
+            }
             $zero = $result['price']['total_amount'] === 0;
             $booking = Booking::create([
                 'booking_reference' => 'BKG-'.strtoupper(Str::random(10)), 'facility_id' => $facility->id,
                 'sport_code_id' => $facility->sport_code_id, 'member_id' => $member->id, 'created_by_user_id' => $user->id,
                 'booking_hold_id' => $hold->id, 'status' => $zero ? 'confirmed' : 'pending_payment',
-                'payment_status' => $zero ? ($result['allowance']['minutes'] ? 'covered_by_allowance' : 'not_required') : 'unpaid',
+                'payment_status' => $zero ? ($result['allowance']['minutes'] ? 'covered_by_allowance' : 'not_required') : ($billingStrategy === 'one_invoice_for_series' ? 'series_invoice_pending' : 'unpaid'),
                 'starts_at' => $hold->starts_at, 'ends_at' => $hold->ends_at, 'duration_minutes' => $hold->starts_at->diffInMinutes($hold->ends_at),
                 'guest_count' => (int) ($hold->price_snapshot['guest_count'] ?? 0), 'profile' => $result['profile']['profile'],
                 'currency' => $result['price']['currency'], 'gross_amount' => $result['price']['gross_amount'],
@@ -85,7 +92,9 @@ class BookingService
                 ]);
             }
             $hold->update(['status' => 'confirmed']);
-            $this->billing->createInvoice($user, $booking);
+            if ($billingStrategy === 'invoice_each_occurrence') {
+                $this->billing->createInvoice($user, $booking);
+            }
             Audit::record('booking.confirmed', $booking, [], ['booking_reference' => $booking->booking_reference, 'facility_id' => $facility->id, 'amount' => $booking->total_amount, 'currency' => $booking->currency]);
             event(new \App\Events\BookingConfirmed($booking->id));
 

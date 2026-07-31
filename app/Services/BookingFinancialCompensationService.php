@@ -86,7 +86,7 @@ class BookingFinancialCompensationService
                     'booking_id' => $booking->id, 'invoice_id' => $invoice->id, 'amount' => $decision->eligibleAmount,
                     'currency' => $decision->currency, 'owners' => $decision->financialOwnerBreakdown,
                 ]);
-            } elseif ($decision->outcomeType === 'invoice_cancelled' && $invoice?->status === 'issued') {
+            } elseif ($decision->outcomeType === 'invoice_cancelled' && $invoice?->status === 'issued' && $invoice->source_type === Booking::class) {
                 app(InvoiceService::class)->voidBookingInvoice($actor, $invoice, $booking, "Booking cancelled: {$reason}");
             }
 
@@ -156,7 +156,10 @@ class BookingFinancialCompensationService
 
     private function createBookingCredit(User $actor, Booking $booking, Invoice $invoice, array $owners, int $amount, string $reason): CreditNote
     {
-        abort_unless($invoice->source_type === Booking::class && (int) $invoice->source_id === $booking->id, 422);
+        $bookingOwned = $invoice->source_type === Booking::class && (int) $invoice->source_id === $booking->id;
+        $seriesOwned = $invoice->source_type === \App\Models\BookingSeries::class
+            && $invoice->lines()->where('source_type', Booking::class)->where('source_id', $booking->id)->exists();
+        abort_unless($bookingOwned || $seriesOwned, 422);
         abort_unless($invoice->member_id === $booking->member_id && $invoice->currency === $booking->currency, 422);
         abort_unless($amount > 0 && collect($owners)->sum('amount') === $amount, 422);
         $note = CreditNote::create([
@@ -172,7 +175,15 @@ class BookingFinancialCompensationService
                 'amount' => $owner['amount'],
             ]);
         }
-        app(FinancialLedgerService::class)->recordInvoiceOwners($invoice, 'booking_credit', -$amount, "booking-credit:{$booking->id}", $reason, null, $note->id);
+        foreach ($owners as $index => $owner) {
+            FinancialTransaction::firstOrCreate(['idempotency_key' => "booking-credit:{$booking->id}:owner:{$index}"], [
+                'member_id' => $booking->member_id, 'invoice_id' => $invoice->id, 'credit_note_id' => $note->id,
+                'membership_period_id' => $invoice->membership_period_id, 'sport_code_id' => $owner['sport_code_id'],
+                'financial_owner_type' => $owner['financial_owner_type'], 'transaction_type' => 'booking_credit',
+                'currency' => $invoice->currency, 'amount' => -$owner['amount'], 'occurred_on' => now()->toDateString(),
+                'reference' => $note->credit_note_number, 'reason' => $reason, 'created_by_user_id' => $actor->id,
+            ]);
+        }
         Audit::record('booking.credit_created', $note, [], [
             'booking_id' => $booking->id, 'invoice_id' => $invoice->id, 'amount' => $amount,
             'currency' => $invoice->currency, 'owners' => $owners,

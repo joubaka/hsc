@@ -13,7 +13,11 @@ use Ramsey\Uuid\Uuid;
 
 class BookingSeriesMaterializationService
 {
-    public function __construct(private BookingSeriesPreviewService $previews, private BookingService $bookings) {}
+    public function __construct(
+        private BookingSeriesPreviewService $previews,
+        private BookingService $bookings,
+        private BookingSeriesBillingService $billing,
+    ) {}
 
     public function materialize(User $actor, BookingSeries $series, array $selected = [], bool $partial = false): array
     {
@@ -47,7 +51,7 @@ class BookingSeriesMaterializationService
                     $hold = $this->bookings->createHold($actor, Facility::findOrFail($series->facility_id), Member::findOrFail($series->member_id), [
                         'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'guest_count' => $series->guest_count, 'idempotency_key' => $holdKey,
                     ]);
-                    $booking = $this->bookings->confirm($actor, $hold, $confirmKey, $series->participant_template ?? []);
+                    $booking = $this->bookings->confirm($actor, $hold, $confirmKey, $series->participant_template ?? [], $series->billing_strategy);
                     $occurrence = BookingSeriesOccurrence::updateOrCreate(
                         ['booking_series_id' => $series->id, 'series_version' => $series->version, 'occurrence_number' => $row['occurrence_number']],
                         ['booking_id' => $booking->id, 'scheduled_date' => $row['local_date'], 'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'status' => 'confirmed', 'preview_snapshot' => $row],
@@ -60,9 +64,10 @@ class BookingSeriesMaterializationService
                     $outcomes[] = ['occurrence_number' => $row['occurrence_number'], 'outcome' => 'failed', 'message' => 'The occurrence could not be created.'];
                 }
             }
+            $invoice = $this->billing->createSeriesInvoice($actor, $series);
             Audit::record('booking_series.occurrences_materialized', $series, [], ['created' => collect($outcomes)->where('outcome', 'created')->count(), 'outcomes' => collect($outcomes)->pluck('outcome')->countBy()]);
 
-            return ['mode' => $partial ? 'partial' : 'all_or_nothing', 'created' => collect($outcomes)->where('outcome', 'created')->count(), 'outcomes' => $outcomes];
+            return ['mode' => $partial ? 'partial' : 'all_or_nothing', 'created' => collect($outcomes)->where('outcome', 'created')->count(), 'outcomes' => $outcomes, 'invoice' => $invoice];
         };
 
         return $partial ? $runner() : DB::transaction($runner, 3);
