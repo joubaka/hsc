@@ -104,6 +104,7 @@ class BookingService
             if ($hold->lighting_snapshot['applies'] ?? false) {
                 app(LightingReservationService::class)->reserve($booking, $hold->lighting_snapshot);
             }
+            app(BookingCheckInService::class)->ensure($booking);
 
             return $booking->fresh(['facility', 'invoice', 'participants']);
         }, 3);

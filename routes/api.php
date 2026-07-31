@@ -1,10 +1,12 @@
 <?php
 
+use App\Http\Controllers\Api\AccessController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\BookingPolicyController;
 use App\Http\Controllers\Api\BookingRefundController;
 use App\Http\Controllers\Api\BookingSeriesController;
+use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\CreditNoteController;
 use App\Http\Controllers\Api\FacilityController;
 use App\Http\Controllers\Api\FacilityScheduleController;
@@ -87,6 +89,9 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('bookings/{booking}/recognize-payment', [BookingController::class, 'recognizePayment']);
     Route::get('bookings/{booking}/cancellation-preview', [BookingController::class, 'cancellationPreview']);
     Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel']);
+    Route::get('bookings/{booking}/check-in', [CheckInController::class, 'show']);
+    Route::post('bookings/{booking}/check-in', [CheckInController::class, 'checkIn'])->middleware('throttle:10,1');
+    Route::post('bookings/{booking}/check-in-token', [CheckInController::class, 'issue'])->middleware('throttle:5,1');
     Route::get('booking/refund-requests', [BookingRefundController::class, 'index']);
     Route::post('booking/refund-requests/{refundRequest}/complete', [BookingRefundController::class, 'complete']);
     Route::get('booking-series', [BookingSeriesController::class, 'index']);
@@ -122,6 +127,9 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('lighting/actions/reconcile', [LightingController::class, 'reconcile']);
     Route::post('lighting/actions/health', [LightingController::class, 'health']);
     Route::get('lighting/reports', [LightingController::class, 'reports']);
+    Route::get('access', [AccessController::class, 'dashboard']);
+    Route::post('access/endpoints', [AccessController::class, 'endpoint']);
+    Route::post('access/actions/dispatch', [AccessController::class, 'dispatch']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);

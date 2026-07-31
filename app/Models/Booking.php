@@ -21,6 +21,16 @@ class Booking extends Model
         return $this->hasMany(LightingReservation::class);
     }
 
+    public function attendance()
+    {
+        return $this->hasOne(BookingAttendance::class);
+    }
+
+    public function accessGrants()
+    {
+        return $this->hasMany(BookingAccessGrant::class);
+    }
+
     public function facility()
     {
         return $this->belongsTo(Facility::class);

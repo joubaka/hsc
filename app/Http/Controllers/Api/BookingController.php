@@ -26,6 +26,7 @@ class BookingController extends Controller
             'cancellationCompensation.creditNote:id,credit_note_number',
             'cancellationCompensation.refundRequest:id,booking_cancellation_compensation_id,status,entitlement_amount,external_reference',
             'lightingReservations:id,booking_id,status,scheduled_on_at,scheduled_off_at,amount,payment_requirement,failure_code',
+            'attendance:id,booking_id,status,check_in_opens_at,check_in_closes_at,checked_in_at,check_in_method',
         ])
             ->when(! $user->isCentralAdministrator(), function ($q) use ($user) {
                 if ($user->member_id) {
@@ -44,7 +45,7 @@ class BookingController extends Controller
         $own = $booking->member_id === $request->user()->member_id;
         abort_unless($own || app(BookingAccessService::class)->canView($request->user(), $booking->facility), 403);
 
-        return response()->json($booking->load(['facility.venue', 'participants', 'invoice.allocations.payment', 'allowanceUsage', 'lightingReservations.zone:id,name,code', 'cancellationCompensation.creditNote', 'cancellationCompensation.refundRequest']));
+        return response()->json($booking->load(['facility.venue', 'participants.attendance', 'invoice.allocations.payment', 'allowanceUsage', 'lightingReservations.zone:id,name,code', 'attendance', 'accessGrants.zone:id,name,code', 'cancellationCompensation.creditNote', 'cancellationCompensation.refundRequest']));
     }
 
     public function simulate(Request $request, BookingRuleEvaluator $evaluator): JsonResponse

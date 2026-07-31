@@ -101,6 +101,9 @@ class BookingFinancialCompensationService
                 'cancelled_by_user_id' => $actor->id, 'cancellation_reason' => $reason,
             ]);
             app(LightingReservationService::class)->cancel($booking);
+            app(BookingCheckInService::class)->revokeTokens($booking);
+            $booking->attendance()->whereNotIn('status', ['checked_in', 'late_checked_in'])->update(['status' => 'cancelled']);
+            app(BookingAccessGrantService::class)->revoke($booking, 'booking_cancelled');
             Audit::record('booking.cancelled', $booking, [], [
                 'reason' => $reason, 'outcome' => $decision->outcomeType, 'amount' => $decision->eligibleAmount,
                 'policy_id' => $decision->policyId, 'policy_version' => $decision->policyVersion, 'idempotency_key' => $idempotencyKey,

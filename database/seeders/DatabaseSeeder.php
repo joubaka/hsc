@@ -2,8 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Models\AccessEndpoint;
+use App\Models\AccessZone;
 use App\Models\Booking;
 use App\Models\BookingAllowancePolicy;
+use App\Models\BookingCheckInSetting;
 use App\Models\BookingHold;
 use App\Models\BookingPolicy;
 use App\Models\BookingPricingRule;
@@ -257,6 +260,14 @@ class DatabaseSeeder extends Seeder
         }
 
         BookingSetting::firstOrCreate([], ['timezone' => 'Africa/Johannesburg', 'currency' => 'ZAR', 'hold_minutes' => 10, 'default_hourly_rate_cents' => 12000]);
+        BookingCheckInSetting::updateOrCreate(['sport_code_id' => null], [
+            'enabled' => true, 'opens_minutes_before' => 30, 'closes_minutes_after' => 10,
+            'allow_member_self_check_in' => true, 'allow_qr' => true, 'allow_short_code' => true,
+            'require_all_participants' => false, 'no_show_grace_minutes' => 10,
+            'automatic_no_show_enabled' => true, 'automatic_release_enabled' => false,
+            'maximum_token_attempts' => 5, 'token_lifetime_minutes' => 120,
+            'allow_without_payment' => false, 'access_lead_minutes' => 30, 'access_lag_minutes' => 15,
+        ]);
         $venue = Venue::updateOrCreate(['code' => 'HSC-MAIN'], ['name' => 'Hermanus Sports Club', 'address' => 'Hermanus', 'timezone' => 'Africa/Johannesburg', 'active' => true]);
         $groups = collect([
             ['code' => 'TENNIS-COURTS', 'name' => 'Tennis courts', 'sport_code_id' => $codes['tennis']->id],
@@ -401,6 +412,19 @@ class DatabaseSeeder extends Seeder
             $lightingZones->put($code, $zone);
         }
         $seedBooking = Booking::where('booking_reference', 'BKG-SEED-CONFIRMED')->first();
+        $accessZone = AccessZone::updateOrCreate(['code' => 'TENNIS-ENTRY-DRY'], [
+            'venue_id' => $venue->id, 'sport_code_id' => $codes['tennis']->id, 'name' => 'Tennis entrance',
+            'active' => true, 'provider_mode' => 'dry_run', 'public_entry_zone' => false,
+            'requires_booking' => true, 'allows_permanent_member_access' => false,
+            'allows_temporary_booking_access' => true, 'default_access_lead_minutes' => 30,
+            'default_access_lag_minutes' => 15,
+        ]);
+        $accessZone->facilities()->syncWithoutDetaching($facilities->only(['TEN-1', 'TEN-2', 'TEN-3', 'TEN-4'])->pluck('id'));
+        AccessEndpoint::updateOrCreate(['code' => 'ACCESS-TENNIS-DRY'], [
+            'access_zone_id' => $accessZone->id, 'name' => 'Tennis entrance dry-run endpoint',
+            'provider' => 'dry_run', 'enabled' => true, 'dry_run' => true, 'last_health_status' => 'unknown',
+        ]);
+        app(\App\Services\BookingCheckInService::class)->ensure($seedBooking);
         $lightingSnapshot = app(\App\Services\LightingQuoteService::class)->quote($facilities['TEN-1'], $seedBooking->starts_at, $seedBooking->ends_at, $seedBooking->profile, true);
         $seedBooking->update(['lighting_snapshot' => $lightingSnapshot]);
         app(\App\Services\LightingReservationService::class)->reserve($seedBooking, $lightingSnapshot);

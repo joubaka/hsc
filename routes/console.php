@@ -13,3 +13,7 @@ Schedule::command('bookings:recheck-series-conflicts')->hourly()->withoutOverlap
 Schedule::command('lighting:dispatch-due')->everyMinute()->withoutOverlapping();
 Schedule::command('lighting:reconcile')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('lighting:health-check')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('bookings:process-no-shows')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('access:dispatch-due')->everyMinute()->withoutOverlapping();
+Schedule::command('access:reconcile')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('access:health-check')->everyFifteenMinutes()->withoutOverlapping();
