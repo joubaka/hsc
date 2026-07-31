@@ -1,7 +1,11 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\BookingPolicyController;
 use App\Http\Controllers\Api\CreditNoteController;
+use App\Http\Controllers\Api\FacilityController;
+use App\Http\Controllers\Api\FacilityScheduleController;
 use App\Http\Controllers\Api\FinancialReportController;
 use App\Http\Controllers\Api\FinancialSettingsController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -10,11 +14,13 @@ use App\Http\Controllers\Api\MembershipApplicationController;
 use App\Http\Controllers\Api\MembershipPeriodController;
 use App\Http\Controllers\Api\MembershipSetupController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PublicAvailabilityController;
 use App\Http\Controllers\Api\RenewalController;
 use App\Http\Controllers\ReceiptPrintController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::get('public/availability', PublicAvailabilityController::class)->middleware('throttle:60,1');
 
 Route::middleware('admin.auth')->group(function () {
     Route::get('auth/me', [AuthController::class, 'me']);
@@ -61,6 +67,22 @@ Route::middleware('admin.auth')->group(function () {
     Route::get('finance/reports/sport/{sportCode}', [FinancialReportController::class, 'sport']);
     Route::get('finance/reports/hsc-levy', [FinancialReportController::class, 'levy']);
     Route::get('finance/receipts/{receipt}/print', ReceiptPrintController::class);
+
+    Route::get('booking/facilities/meta', [FacilityController::class, 'meta']);
+    Route::apiResource('booking/facilities', FacilityController::class)->only(['index', 'store', 'update']);
+    Route::post('booking/facilities/{facility}/opening-hours', [FacilityScheduleController::class, 'storeHours']);
+    Route::post('booking/facilities/{facility}/closures', [FacilityScheduleController::class, 'storeClosure']);
+    Route::post('booking/closures/{closure}/cancel', [FacilityScheduleController::class, 'cancelClosure']);
+    Route::get('booking/policies', [BookingPolicyController::class, 'index']);
+    Route::post('booking/policies', [BookingPolicyController::class, 'storePolicy']);
+    Route::post('booking/pricing-rules', [BookingPolicyController::class, 'storePricing']);
+    Route::get('bookings', [BookingController::class, 'index']);
+    Route::get('bookings/{booking}', [BookingController::class, 'show']);
+    Route::post('booking/simulate', [BookingController::class, 'simulate']);
+    Route::post('booking/holds', [BookingController::class, 'hold']);
+    Route::post('booking/holds/{hold}/confirm', [BookingController::class, 'confirm']);
+    Route::post('bookings/{booking}/recognize-payment', [BookingController::class, 'recognizePayment']);
+    Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);

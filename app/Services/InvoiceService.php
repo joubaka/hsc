@@ -93,6 +93,23 @@ class InvoiceService
     public function issue(User $user, Invoice $invoice, ?string $issuedOn = null): Invoice
     {
         abort_unless(app(FinanceAccessService::class)->canWriteInvoice($user, $invoice), 403);
+
+        return $this->postInvoice($user, $invoice, $issuedOn);
+    }
+
+    public function issueBookingInvoice(User $user, Invoice $invoice): Invoice
+    {
+        $booking = \App\Models\Booking::whereKey($invoice->source_id)
+            ->where('created_by_user_id', $user->id)
+            ->where('member_id', $invoice->member_id)
+            ->first();
+        abort_unless($invoice->source_type === \App\Models\Booking::class && $booking, 403);
+
+        return $this->postInvoice($user, $invoice);
+    }
+
+    private function postInvoice(User $user, Invoice $invoice, ?string $issuedOn = null): Invoice
+    {
         abort_unless($invoice->status === 'draft', 422, 'Only draft invoices may be issued.');
         $number = $this->numbers->next('invoice');
 
@@ -125,6 +142,20 @@ class InvoiceService
     public function void(User $user, Invoice $invoice, string $reason): Invoice
     {
         abort_unless(app(FinanceAccessService::class)->canWriteInvoice($user, $invoice), 403);
+
+        return $this->voidInvoice($user, $invoice, $reason);
+    }
+
+    public function voidBookingInvoice(User $user, Invoice $invoice, \App\Models\Booking $booking, string $reason): Invoice
+    {
+        abort_unless($invoice->source_type === \App\Models\Booking::class && (int) $invoice->source_id === $booking->id, 403);
+        abort_unless($booking->member_id === $user->member_id || $booking->created_by_user_id === $user->id || $user->isCentralAdministrator(), 403);
+
+        return $this->voidInvoice($user, $invoice, $reason);
+    }
+
+    private function voidInvoice(User $user, Invoice $invoice, string $reason): Invoice
+    {
         abort_unless($invoice->status === 'issued' && $invoice->paid_amount === 0 && $invoice->credited_amount === 0, 422, 'Only unpaid, uncredited issued invoices may be voided.');
         $invoice->update(['status' => 'void', 'voided_by_user_id' => $user->id, 'voided_at' => now(), 'void_reason' => $reason, 'outstanding_amount' => 0]);
         $this->ledger->recordInvoiceOwners($invoice, 'invoice_void', $invoice->total_amount, "invoice-void:{$invoice->id}", $reason);
