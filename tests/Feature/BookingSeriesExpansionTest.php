@@ -206,13 +206,14 @@ class BookingSeriesExpansionTest extends TestCase
         $member = Member::where('member_number', 'HSC-00001')->firstOrFail();
         $origin = Facility::where('code', 'TEN-1')->firstOrFail();
         $destination = Facility::where('code', 'TEN-2')->firstOrFail();
+        Booking::where('booking_reference', 'BKG-SEED-CONFIRMED')->update(['status' => 'completed']);
         $origin->openingHours()->update(['opens_at' => '00:00:00', 'closes_at' => '23:59:59']);
         $destination->openingHours()->update(['opens_at' => '00:00:00', 'closes_at' => '23:59:59']);
         $payload = [
             'facility_id' => $origin->id, 'sport_code_id' => $origin->sport_code_id, 'member_id' => $member->id,
-            'series_type' => 'coach_block', 'starts_on' => now()->addDays(5)->toDateString(), 'start_time' => '08:00',
+            'series_type' => 'coach_block', 'starts_on' => now()->addDays(3)->toDateString(), 'start_time' => '08:00',
             'duration_minutes' => 60, 'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'daily',
-            'recurrence_interval' => 1, 'occurrence_limit' => 3, 'guest_count' => 0,
+            'recurrence_interval' => 1, 'occurrence_limit' => 4, 'guest_count' => 0,
             'billing_strategy' => 'one_invoice_for_series', 'idempotency_key' => (string) Str::uuid(),
         ];
         $seriesId = $this->withToken('series-mutations')->postJson('/api/booking-series', $payload)->assertCreated()->json('id');
@@ -251,14 +252,17 @@ class BookingSeriesExpansionTest extends TestCase
         $revision = $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/revise-future", [
             'effective_occurrence_id' => $occurrences[2]->id,
             'changes' => ['start_time' => '11:00', 'occurrence_limit' => 1],
+            'selected_occurrence_ids' => [$occurrences[2]->id],
             'reason' => 'Permanent time change', 'idempotency_key' => $revisionKey, 'series_version' => 1,
-        ])->assertOk()->assertJsonPath('superseded', 1);
+        ])->assertOk()->assertJsonPath('mode', 'selected_partial')->assertJsonPath('superseded', 1);
         $successor = BookingSeries::findOrFail($revision->json('successor_id'));
         $this->assertSame($seriesId, $successor->predecessor_series_id);
         $this->assertSame($successor->id, BookingSeries::findOrFail($seriesId)->successor_series_id);
+        $this->assertSame('active', BookingSeries::findOrFail($seriesId)->status);
         $this->assertSame(2, $successor->version);
         $this->assertCount(1, $successor->occurrences);
         $this->assertSame('superseded', $occurrences[2]->fresh()->status);
+        $this->assertSame('confirmed', $occurrences[3]->fresh()->status);
 
         $successorOccurrence = $successor->occurrences()->firstOrFail();
         $successor->facility()->update(['active' => false]);

@@ -28,14 +28,18 @@ class BookingSeriesRevisionService
             return $existing->result_snapshot;
         }
 
-        $eligible = $predecessor->occurrences()
+        $allEligible = $predecessor->occurrences()
             ->with('booking')
             ->where('occurrence_number', '>=', $effective->occurrence_number)
             ->whereHas('booking', fn ($query) => $query->where('starts_at', '>', now())->whereIn('status', ['confirmed', 'pending_payment']))
             ->orderBy('occurrence_number')
             ->get();
+        $eligible = $allEligible;
+        $partialSelection = $selected !== [];
         if ($selected !== []) {
             $eligible = $eligible->whereIn('id', $selected)->values();
+            $expected = $allEligible->take($eligible->count())->pluck('id')->all();
+            abort_unless($eligible->pluck('id')->all() === $expected, 422, 'Partial revisions must select a contiguous range beginning with the effective occurrence.');
         }
         abort_if($eligible->isEmpty(), 422, 'There are no eligible future occurrences to revise.');
 
@@ -54,7 +58,7 @@ class BookingSeriesRevisionService
         $replacementRows = collect($preview['occurrences'])->take($eligible->count());
         abort_if($replacementRows->count() !== $eligible->count() || $replacementRows->contains(fn ($row) => ! $row['eligible']), 422, 'The successor series has unavailable occurrences. No original bookings were changed.');
 
-        return DB::transaction(function () use ($actor, $predecessor, $effective, $definition, $eligible, $reason, $idempotencyKey, $preview) {
+        return DB::transaction(function () use ($actor, $predecessor, $effective, $definition, $eligible, $partialSelection, $reason, $idempotencyKey, $preview) {
             $predecessor = BookingSeries::whereKey($predecessor->id)->lockForUpdate()->firstOrFail();
             if ($existing = BookingSeriesMutation::where('idempotency_key', $idempotencyKey)->first()) {
                 return $existing->result_snapshot;
@@ -91,12 +95,16 @@ class BookingSeriesRevisionService
                     'superseded_by_occurrence_id' => $newOccurrences[$index]->id,
                 ]);
             }
-            $predecessor->update([
-                'ends_on' => $effective->scheduled_date->copy()->subDay(),
-                'successor_series_id' => $successor->id,
-                'status' => 'superseded',
-            ]);
+            $predecessorChanges = ['successor_series_id' => $successor->id];
+            if (! $partialSelection) {
+                $predecessorChanges += [
+                    'ends_on' => $effective->scheduled_date->copy()->subDay(),
+                    'status' => 'superseded',
+                ];
+            }
+            $predecessor->update($predecessorChanges);
             $result = [
+                'mode' => $partialSelection ? 'selected_partial' : 'all_or_nothing',
                 'predecessor_id' => $predecessor->id,
                 'successor_id' => $successor->id,
                 'superseded' => $eligible->count(),
