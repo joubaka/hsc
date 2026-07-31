@@ -50,6 +50,11 @@ export default [
     icon: { icon: 'tabler-calendar-event' },
   },
   {
+    title: 'Recurring bookings',
+    to: { name: 'booking-series' },
+    icon: { icon: 'tabler-calendar-repeat' },
+  },
+  {
     title: 'Facilities',
     to: { name: 'booking-facilities' },
     icon: { icon: 'tabler-building-stadium' },

@@ -7,6 +7,7 @@ use App\Models\BookingAllowancePolicy;
 use App\Models\BookingHold;
 use App\Models\BookingPolicy;
 use App\Models\BookingPricingRule;
+use App\Models\BookingSeries;
 use App\Models\BookingSetting;
 use App\Models\Facility;
 use App\Models\FacilityGroup;
@@ -342,6 +343,26 @@ class DatabaseSeeder extends Seeder
             'profile' => 'adult_member', 'currency' => 'ZAR', 'total_amount' => 0, 'rule_snapshot' => ['seed' => true],
             'price_snapshot' => ['total_amount' => 0], 'cancellation_snapshot' => ['version' => 1], 'cancelled_at' => now(),
             'cancellation_reason' => 'Seed demonstration',
+        ]);
+        BookingSeries::updateOrCreate(['idempotency_key' => '00000000-0000-4000-8000-000000000101'], [
+            'series_reference' => 'SER-DEMO-WEEKLY', 'facility_id' => $facilities['TEN-1']->id,
+            'sport_code_id' => $codes['tennis']->id, 'member_id' => $anna->id, 'created_by_user_id' => $systemUser->id,
+            'series_type' => 'member_recurring', 'status' => 'draft', 'approval_status' => 'draft', 'version' => 1,
+            'starts_on' => now()->addDays(5)->toDateString(), 'start_time' => '16:00:00', 'duration_minutes' => 60,
+            'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'daily', 'recurrence_interval' => 1,
+            'days_of_week' => null, 'occurrence_limit' => 2, 'guest_count' => 0,
+            'participant_template' => [], 'billing_strategy' => 'one_invoice_for_series', 'booking_type' => 'court',
+            'member_notes' => 'Seed demonstration recurring request.',
+        ]);
+        BookingSeries::updateOrCreate(['idempotency_key' => '00000000-0000-4000-8000-000000000102'], [
+            'series_reference' => 'SER-DEMO-BLOCK', 'facility_id' => $facilities['TEN-2']->id,
+            'sport_code_id' => $codes['tennis']->id, 'member_id' => $anna->id, 'created_by_user_id' => $systemUser->id,
+            'series_type' => 'coach_block', 'status' => 'submitted', 'approval_status' => 'submitted', 'version' => 1,
+            'starts_on' => now()->addDays(6)->toDateString(), 'start_time' => '09:00:00', 'duration_minutes' => 90,
+            'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'weekly', 'recurrence_interval' => 1,
+            'days_of_week' => [(int) now()->addDays(6)->isoWeekday()], 'occurrence_limit' => 6, 'guest_count' => 0,
+            'participant_template' => [], 'billing_strategy' => 'invoice_each_occurrence', 'booking_type' => 'court',
+            'submitted_at' => now(), 'member_notes' => 'Seed demonstration block-booking request.',
         ]);
 
         $adminEmail = env('HSC_ADMIN_EMAIL', 'admin@hsc.local');
