@@ -49,13 +49,17 @@ class BookingSeriesMaterializationService
                     $holdKey = Uuid::uuid5(Uuid::NAMESPACE_URL, "hsc-series:{$series->id}:v{$series->version}:occurrence:{$row['occurrence_number']}:hold")->toString();
                     $confirmKey = Uuid::uuid5(Uuid::NAMESPACE_URL, "hsc-series:{$series->id}:v{$series->version}:occurrence:{$row['occurrence_number']}:confirm")->toString();
                     $hold = $this->bookings->createHold($actor, Facility::findOrFail($series->facility_id), Member::findOrFail($series->member_id), [
-                        'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'guest_count' => $series->guest_count, 'idempotency_key' => $holdKey,
+                        'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'guest_count' => $series->guest_count, 'lighting_requested' => $series->lighting_requested, 'idempotency_key' => $holdKey,
                     ]);
                     $booking = $this->bookings->confirm($actor, $hold, $confirmKey, $series->participant_template ?? [], $series->billing_strategy);
                     $occurrence = BookingSeriesOccurrence::updateOrCreate(
                         ['booking_series_id' => $series->id, 'series_version' => $series->version, 'occurrence_number' => $row['occurrence_number']],
                         ['booking_id' => $booking->id, 'scheduled_date' => $row['local_date'], 'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'status' => 'confirmed', 'preview_snapshot' => $row],
                     );
+                    $booking->lightingReservations()->update([
+                        'booking_series_id' => $series->id,
+                        'booking_series_occurrence_id' => $occurrence->id,
+                    ]);
                     $outcomes[] = ['occurrence_number' => $row['occurrence_number'], 'outcome' => 'created', 'booking_id' => $booking->id, 'booking_reference' => $booking->booking_reference, 'occurrence_id' => $occurrence->id];
                 } catch (\Throwable $e) {
                     if (! $partial) {

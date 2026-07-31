@@ -27,7 +27,7 @@ class BookingService
 
         return DB::transaction(function () use ($user, $facility, $member, $data, $start, $end) {
             $facility = Facility::lockForUpdate()->findOrFail($facility->id);
-            $result = $this->evaluator->evaluate($user, $member, $facility, $start, $end, (int) ($data['guest_count'] ?? 0));
+            $result = $this->evaluator->evaluate($user, $member, $facility, $start, $end, (int) ($data['guest_count'] ?? 0), null, null, (bool) ($data['lighting_requested'] ?? false));
             abort_unless($result['eligible'], 422, $result['failures'][0]['member_message'] ?? 'This booking is not eligible.');
             $settings = \App\Models\BookingSetting::firstOrCreate([]);
             $hold = BookingHold::create([
@@ -37,6 +37,7 @@ class BookingService
                 'rule_snapshot' => ['profile' => $result['profile'], 'policies' => $result['policies'], 'checks' => $result['checks']],
                 'price_snapshot' => $result['price'], 'allowance_snapshot' => $result['allowance'],
                 'cancellation_snapshot' => $result['cancellation'], 'idempotency_key' => $data['idempotency_key'],
+                'lighting_snapshot' => $result['lighting'],
             ]);
             Audit::record('booking.hold_created', $hold, [], ['facility_id' => $facility->id, 'member_id' => $member->id, 'starts_at' => $start, 'ends_at' => $end, 'amount' => $result['price']['total_amount']]);
             event(new \App\Events\BookingHoldCreated($hold->id));
@@ -57,7 +58,7 @@ class BookingService
             abort_unless($hold->status === 'active' && $hold->expires_at->isFuture(), 422, 'This booking hold has expired.');
             $facility = Facility::lockForUpdate()->findOrFail($hold->facility_id);
             $member = Member::findOrFail($hold->member_id);
-            $result = $this->evaluator->evaluate($user, $member, $facility, $hold->starts_at, $hold->ends_at, (int) ($hold->price_snapshot['guest_count'] ?? 0), $hold->id);
+            $result = $this->evaluator->evaluate($user, $member, $facility, $hold->starts_at, $hold->ends_at, (int) ($hold->price_snapshot['guest_count'] ?? 0), $hold->id, null, (bool) ($hold->lighting_snapshot['applies'] ?? false));
             abort_unless($result['eligible'], 422, $result['failures'][0]['member_message'] ?? 'This booking can no longer be confirmed.');
             abort_unless($result['price']['total_amount'] === $hold->price_snapshot['total_amount'], 422, 'The booking price changed. Please create a new hold.');
             abort_if($billingStrategy === 'allowance_covered' && ($result['allowance']['minutes'] ?? 0) < $hold->starts_at->diffInMinutes($hold->ends_at), 422, 'This occurrence is not fully covered by allowance.');
@@ -79,6 +80,7 @@ class BookingService
                 'allowance_amount' => $result['price']['allowance_amount'], 'total_amount' => $result['price']['total_amount'],
                 'rule_snapshot' => $hold->rule_snapshot, 'price_snapshot' => $result['price'],
                 'allowance_snapshot' => $result['allowance'], 'cancellation_snapshot' => $result['cancellation'],
+                'lighting_snapshot' => $hold->lighting_snapshot,
                 'confirmation_key' => $confirmationKey,
             ]);
             foreach ($participants as $participant) {
@@ -98,6 +100,10 @@ class BookingService
             Audit::record('booking.confirmed', $booking, [], ['booking_reference' => $booking->booking_reference, 'facility_id' => $facility->id, 'amount' => $booking->total_amount, 'currency' => $booking->currency]);
             event(new \App\Events\BookingConfirmed($booking->id));
 
+            if ($hold->lighting_snapshot['applies'] ?? false) {
+                app(LightingReservationService::class)->reserve($booking, $hold->lighting_snapshot);
+            }
+
             return $booking->fresh(['facility', 'invoice', 'participants']);
         }, 3);
     }
@@ -107,6 +113,7 @@ class BookingService
         abort_unless($booking->created_by_user_id === $user->id || $user->isCentralAdministrator(), 403);
         abort_unless($booking->invoice && $booking->invoice->outstanding_amount === 0, 422, 'The booking invoice is not fully paid.');
         $booking->update(['status' => 'confirmed', 'payment_status' => 'paid']);
+        app(LightingReservationService::class)->markPaid($booking);
         Audit::record('booking.payment_linked', $booking, [], ['invoice_id' => $booking->invoice_id]);
 
         return $booking->fresh(['facility', 'invoice']);

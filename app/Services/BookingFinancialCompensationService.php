@@ -100,6 +100,7 @@ class BookingFinancialCompensationService
                 'status' => 'cancelled', 'payment_status' => $decision->outcomeType, 'cancelled_at' => now(),
                 'cancelled_by_user_id' => $actor->id, 'cancellation_reason' => $reason,
             ]);
+            app(LightingReservationService::class)->cancel($booking);
             Audit::record('booking.cancelled', $booking, [], [
                 'reason' => $reason, 'outcome' => $decision->outcomeType, 'amount' => $decision->eligibleAmount,
                 'policy_id' => $decision->policyId, 'policy_version' => $decision->policyVersion, 'idempotency_key' => $idempotencyKey,

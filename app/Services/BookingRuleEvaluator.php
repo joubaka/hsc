@@ -15,9 +15,10 @@ class BookingRuleEvaluator
         private BookingProfileResolver $profiles,
         private BookingPolicyResolver $policies,
         private BookingPriceCalculator $prices,
+        private LightingQuoteService $lighting,
     ) {}
 
-    public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null, int|array|null $ignoreBookingId = null): array
+    public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null, int|array|null $ignoreBookingId = null, bool $lightingRequested = false): array
     {
         $facility->loadMissing(['venue', 'sportCode', 'openingHours', 'group']);
         $profile = $this->profiles->resolve($user, $member, $facility, $start);
@@ -69,6 +70,11 @@ class BookingRuleEvaluator
         }
         $add('guest_limit', $rules['guest_allowed'] && $guestCount <= $rules['max_guests'], "A maximum of {$rules['max_guests']} guests is allowed.", ['actual' => $guestCount]);
         $price = $this->prices->calculate($facility, $profile, $start, $minutes, $guestCount);
+        $lighting = $this->lighting->quote($facility, $start, $end, $profile['profile'], $lightingRequested, $user->isCentralAdministrator() && $lightingRequested);
+        $price['lighting_amount'] = (int) ($lighting['amount'] ?? 0);
+        $price['court_amount'] = $price['total_amount'];
+        $price['gross_amount'] += $price['lighting_amount'];
+        $price['total_amount'] += $price['lighting_amount'];
         $cancellation = [
             'policy_ids' => collect($policy['applied'])->where('type', 'cancellation')->pluck('id')->all(),
             'version' => max(collect($policy['applied'])->where('type', 'cancellation')->pluck('version')->all() ?: [1]),
@@ -82,7 +88,7 @@ class BookingRuleEvaluator
         return [
             'eligible' => $failures === [], 'profile' => $profile, 'policies' => $policy['applied'],
             'checks' => $checks, 'failures' => $failures, 'price' => $price,
-            'allowance' => $price['allowance'], 'cancellation' => $cancellation,
+            'allowance' => $price['allowance'], 'cancellation' => $cancellation, 'lighting' => $lighting,
         ];
     }
 }

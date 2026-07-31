@@ -12,8 +12,13 @@ class Booking extends Model
     {
         return [
             'starts_at' => 'datetime', 'ends_at' => 'datetime', 'cancelled_at' => 'datetime',
-            'rule_snapshot' => 'array', 'price_snapshot' => 'array', 'allowance_snapshot' => 'array', 'cancellation_snapshot' => 'array',
+            'rule_snapshot' => 'array', 'price_snapshot' => 'array', 'allowance_snapshot' => 'array', 'cancellation_snapshot' => 'array', 'lighting_snapshot' => 'array',
         ];
+    }
+
+    public function lightingReservations()
+    {
+        return $this->hasMany(LightingReservation::class);
     }
 
     public function facility()

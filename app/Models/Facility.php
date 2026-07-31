@@ -16,6 +16,11 @@ class Facility extends Model
         ];
     }
 
+    public function lightingZones()
+    {
+        return $this->belongsToMany(LightingZone::class, 'facility_lighting_zone')->withTimestamps();
+    }
+
     public function venue()
     {
         return $this->belongsTo(Venue::class);

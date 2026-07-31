@@ -27,7 +27,7 @@ class BookingSeriesPreviewService
         $allowanceByPeriod = [];
         $rows = [];
         foreach ($this->expander->expand($values) as $slot) {
-            $result = $this->evaluator->evaluate($actor, $member, $facility, $slot['starts_at'], $slot['ends_at'], (int) ($values['guest_count'] ?? 0), null, $ignoreBookingIds);
+            $result = $this->evaluator->evaluate($actor, $member, $facility, $slot['starts_at'], $slot['ends_at'], (int) ($values['guest_count'] ?? 0), null, $ignoreBookingIds, (bool) ($values['lighting_requested'] ?? false));
             $failures = $result['failures'];
             $futureLimit = collect($result['checks'])->firstWhere('code', 'future_quota');
             $dailyLimit = collect($result['checks'])->firstWhere('code', 'daily_quota');

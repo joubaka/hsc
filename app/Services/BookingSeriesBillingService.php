@@ -50,15 +50,28 @@ class BookingSeriesBillingService
             ]);
             foreach ($occurrences as $occurrence) {
                 $booking = $occurrence->booking;
+                $lightingAmount = (int) ($booking->lighting_snapshot['amount'] ?? 0);
+                $facilityTotal = $booking->total_amount - $lightingAmount;
                 $invoice->lines()->create([
                     'line_type' => 'facility', 'financial_owner_type' => 'sport_code', 'sport_code_id' => $booking->sport_code_id,
                     'description' => "{$occurrence->scheduled_date->format('d M Y')} {$booking->starts_at->format('H:i')} {$booking->facility->name} ({$booking->booking_reference})",
-                    'quantity' => 1, 'unit_amount' => $booking->total_amount, 'gross_amount' => $booking->gross_amount,
+                    'quantity' => 1, 'unit_amount' => $facilityTotal, 'gross_amount' => $booking->gross_amount - $lightingAmount,
                     'discount_amount' => $booking->allowance_amount + $booking->discount_amount,
-                    'net_amount' => $booking->total_amount, 'tax_amount' => 0, 'total_amount' => $booking->total_amount,
+                    'net_amount' => $facilityTotal, 'tax_amount' => 0, 'total_amount' => $facilityTotal,
                     'source_type' => $booking::class, 'source_id' => $booking->id,
                     'snapshot_metadata' => [...$booking->price_snapshot, 'booking_series_id' => $series->id, 'occurrence_id' => $occurrence->id, 'series_version' => $series->version],
                 ]);
+                if ($lightingAmount > 0) {
+                    $invoice->lines()->create([
+                        'line_type' => 'lighting', 'financial_owner_type' => $booking->lighting_snapshot['financial_owner_type'] ?? 'sport_code',
+                        'sport_code_id' => $booking->sport_code_id,
+                        'description' => "{$occurrence->scheduled_date->format('d M Y')} ".($booking->lighting_snapshot['zone']['name'] ?? 'Court').' lighting',
+                        'quantity' => 1, 'unit_amount' => $lightingAmount, 'gross_amount' => $lightingAmount, 'discount_amount' => 0,
+                        'net_amount' => $lightingAmount, 'tax_amount' => 0, 'total_amount' => $lightingAmount,
+                        'source_type' => $booking::class, 'source_id' => $booking->id,
+                        'snapshot_metadata' => [...$booking->lighting_snapshot, 'booking_series_id' => $series->id, 'occurrence_id' => $occurrence->id],
+                    ]);
+                }
             }
             abort_unless((int) $invoice->lines()->sum('total_amount') === $total, 500, 'Series invoice line reconciliation failed.');
             $invoice = app(InvoiceService::class)->issue($actor, $invoice);
