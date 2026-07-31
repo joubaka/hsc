@@ -1,13 +1,13 @@
-export const staticPrimaryColor = '#7367F0'
-export const staticPrimaryDarkenColor = '#675DD8'
+export const staticPrimaryColor = '#111A3F'
+export const staticPrimaryDarkenColor = '#0A102B'
 export const themes = {
   light: {
     dark: false,
     colors: {
       'primary': staticPrimaryColor,
       'on-primary': '#fff',
-      'primary-darken-1': '#675DD8',
-      'secondary': '#808390',
+      'primary-darken-1': staticPrimaryDarkenColor,
+      'secondary': '#BD1F2D',
       'on-secondary': '#fff',
       'secondary-darken-1': '#737682',
       'success': '#28C76F',
@@ -19,7 +19,7 @@ export const themes = {
       'warning': '#FF9F43',
       'on-warning': '#fff',
       'warning-darken-1': '#E68F3C',
-      'error': '#FF4C51',
+      'error': '#BD1F2D',
       'on-error': '#fff',
       'error-darken-1': '#E64449',
       'background': '#F8F7FA',
@@ -79,8 +79,8 @@ export const themes = {
     colors: {
       'primary': staticPrimaryColor,
       'on-primary': '#fff',
-      'primary-darken-1': '#675DD8',
-      'secondary': '#808390',
+      'primary-darken-1': staticPrimaryDarkenColor,
+      'secondary': '#D64A55',
       'on-secondary': '#fff',
       'secondary-darken-1': '#737682',
       'success': '#28C76F',
@@ -92,7 +92,7 @@ export const themes = {
       'warning': '#FF9F43',
       'on-warning': '#fff',
       'warning-darken-1': '#E68F3C',
-      'error': '#FF4C51',
+      'error': '#D64A55',
       'on-error': '#fff',
       'error-darken-1': '#E64449',
       'background': '#25293C',
