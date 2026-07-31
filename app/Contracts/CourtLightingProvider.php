@@ -2,11 +2,16 @@
 
 namespace App\Contracts;
 
-use App\Models\Booking;
+use App\Support\LightingCommandResult;
+use App\Support\LightingEndpoint;
 
 interface CourtLightingProvider
 {
-    public function scheduleForBooking(Booking $booking): void;
+    public function switchOn(LightingEndpoint $endpoint, string $idempotencyKey): LightingCommandResult;
 
-    public function cancelForBooking(Booking $booking): void;
+    public function switchOff(LightingEndpoint $endpoint, string $idempotencyKey): LightingCommandResult;
+
+    public function readState(LightingEndpoint $endpoint): LightingCommandResult;
+
+    public function healthCheck(LightingEndpoint $endpoint): LightingCommandResult;
 }
