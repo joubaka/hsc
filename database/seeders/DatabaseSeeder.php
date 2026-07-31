@@ -14,6 +14,9 @@ use App\Models\FacilityGroup;
 use App\Models\FacilityTag;
 use App\Models\FinancialSetting;
 use App\Models\Household;
+use App\Models\LightingDevice;
+use App\Models\LightingSetting;
+use App\Models\LightingZone;
 use App\Models\Member;
 use App\Models\MembershipApplication;
 use App\Models\MembershipPeriod;
@@ -344,6 +347,63 @@ class DatabaseSeeder extends Seeder
             'price_snapshot' => ['total_amount' => 0], 'cancellation_snapshot' => ['version' => 1], 'cancelled_at' => now(),
             'cancellation_reason' => 'Seed demonstration',
         ]);
+        LightingSetting::updateOrCreate(['sport_code_id' => null], [
+            'automation_enabled' => false, 'dry_run' => true, 'pre_start_minutes' => 10, 'post_end_minutes' => 5,
+            'maximum_continuous_on_minutes' => 240, 'minimum_billable_minutes' => 30, 'billing_increment_minutes' => 30,
+            'default_financial_owner_type' => 'sport_code', 'require_paid' => true, 'allow_allowance' => true,
+            'allow_waived' => true, 'retry_count' => 3, 'retry_delay_seconds' => 60, 'command_timeout_seconds' => 5,
+            'merge_window_minutes' => 10, 'manual_override_max_minutes' => 120, 'members_may_select' => true,
+        ]);
+        $dryDevice = LightingDevice::updateOrCreate(['code' => 'LIGHT-DEMO-DRY'], [
+            'name' => 'Dry-run Shelly Pro demonstration', 'provider' => 'shelly', 'network_host' => null,
+            'enabled' => true, 'dry_run' => true, 'last_health_status' => 'unknown', 'created_by_user_id' => $systemUser->id,
+        ]);
+        $dryChannels = collect([0 => 'Relay channel A', 1 => 'Relay channel B'])->mapWithKeys(function ($name, $number) use ($dryDevice) {
+            $channel = $dryDevice->channels()->updateOrCreate(['channel_number' => $number], [
+                'name' => $name, 'enabled' => true, 'maximum_continuous_on_minutes' => 240,
+            ]);
+
+            return [$number => $channel];
+        });
+        $manualDevice = LightingDevice::updateOrCreate(['code' => 'LIGHT-DEMO-MANUAL'], [
+            'name' => 'Staff-operated lighting', 'provider' => 'manual', 'network_host' => null,
+            'enabled' => true, 'dry_run' => true, 'last_health_status' => 'manual', 'created_by_user_id' => $systemUser->id,
+        ]);
+        $manualChannel = $manualDevice->channels()->updateOrCreate(['channel_number' => 0], [
+            'name' => 'Manual lighting task', 'enabled' => true, 'maximum_continuous_on_minutes' => 180,
+        ]);
+        $zoneData = [
+            'TENNIS-LIGHT-A' => ['Tennis lighting zone A', $codes['tennis']->id, $dryChannels[0]->id, ['TEN-1', 'TEN-2'], 'dry_run'],
+            'TENNIS-LIGHT-B' => ['Tennis lighting zone B', $codes['tennis']->id, $dryChannels[1]->id, ['TEN-3', 'TEN-4'], 'dry_run'],
+            'PADEL-LIGHT-1' => ['Padel lighting zone 1', $codes['padel']->id, $manualChannel->id, ['PAD-1'], 'manual'],
+        ];
+        $lightingZones = collect();
+        foreach ($zoneData as $code => [$name, $sportId, $channelId, $facilityCodes, $mode]) {
+            $zone = LightingZone::updateOrCreate(['code' => $code], [
+                'venue_id' => $venue->id, 'sport_code_id' => $sportId, 'lighting_device_channel_id' => $channelId,
+                'name' => $name, 'active' => true, 'automatic_control_enabled' => false, 'provider_mode' => $mode,
+                'pre_start_minutes' => 10, 'post_end_minutes' => 5, 'minimum_billable_minutes' => 30,
+                'billing_increment_minutes' => 30, 'maximum_continuous_on_minutes' => 240, 'financial_owner_type' => 'sport_code',
+            ]);
+            $zone->facilities()->sync($facilities->only($facilityCodes)->pluck('id'));
+            $zone->policies()->updateOrCreate(['strategy' => 'fixed_band', 'profile' => null], [
+                'starts_at' => '18:00:00', 'ends_at' => '23:00:00', 'active' => true, 'priority' => 20, 'version' => 1,
+            ]);
+            $zone->tariffs()->updateOrCreate(['name' => 'Member evening lighting'], [
+                'pricing_method' => 'hourly', 'amount_cents' => 8000, 'starts_at' => '18:00:00', 'ends_at' => '23:00:00',
+                'minimum_minutes' => 30, 'increment_minutes' => 30, 'financial_owner_type' => 'sport_code',
+                'active' => true, 'priority' => 20, 'version' => 1,
+            ]);
+            $zone->tariffs()->updateOrCreate(['name' => 'Optional daytime lighting'], [
+                'pricing_method' => 'fixed', 'amount_cents' => 5000, 'minimum_minutes' => 30, 'increment_minutes' => 30,
+                'financial_owner_type' => 'sport_code', 'active' => true, 'priority' => 1, 'version' => 1,
+            ]);
+            $lightingZones->put($code, $zone);
+        }
+        $seedBooking = Booking::where('booking_reference', 'BKG-SEED-CONFIRMED')->first();
+        $lightingSnapshot = app(\App\Services\LightingQuoteService::class)->quote($facilities['TEN-1'], $seedBooking->starts_at, $seedBooking->ends_at, $seedBooking->profile, true);
+        $seedBooking->update(['lighting_snapshot' => $lightingSnapshot]);
+        app(\App\Services\LightingReservationService::class)->reserve($seedBooking, $lightingSnapshot);
         BookingSeries::updateOrCreate(['idempotency_key' => '00000000-0000-4000-8000-000000000101'], [
             'series_reference' => 'SER-DEMO-WEEKLY', 'facility_id' => $facilities['TEN-1']->id,
             'sport_code_id' => $codes['tennis']->id, 'member_id' => $anna->id, 'created_by_user_id' => $systemUser->id,

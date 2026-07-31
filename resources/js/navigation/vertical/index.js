@@ -69,4 +69,9 @@ export default [
     to: { name: 'booking-refunds' },
     icon: { icon: 'tabler-receipt-refund' },
   },
+  {
+    title: 'Court lighting',
+    to: { name: 'lighting' },
+    icon: { icon: 'tabler-bulb' },
+  },
 ]

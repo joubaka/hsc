@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\FacilityScheduleController;
 use App\Http\Controllers\Api\FinancialReportController;
 use App\Http\Controllers\Api\FinancialSettingsController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\LightingController;
 use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\MembershipApplicationController;
 use App\Http\Controllers\Api\MembershipPeriodController;
@@ -102,6 +103,20 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('booking-series/{bookingSeries}/move', [BookingSeriesController::class, 'moveScope']);
     Route::post('booking-series/occurrences/{occurrence}/amend', [BookingSeriesController::class, 'amendOccurrence']);
     Route::post('booking-series/occurrences/{occurrence}/move', [BookingSeriesController::class, 'moveOccurrence']);
+    Route::get('lighting', [LightingController::class, 'dashboard']);
+    Route::put('lighting/settings', [LightingController::class, 'settings']);
+    Route::post('lighting/devices', [LightingController::class, 'storeDevice']);
+    Route::put('lighting/devices/{lightingDevice}', [LightingController::class, 'updateDevice']);
+    Route::post('lighting/devices/{lightingDevice}/channels', [LightingController::class, 'channel']);
+    Route::post('lighting/devices/{lightingDevice}/test', [LightingController::class, 'test']);
+    Route::post('lighting/zones', [LightingController::class, 'storeZone']);
+    Route::put('lighting/zones/{lightingZone}', [LightingController::class, 'updateZone']);
+    Route::post('lighting/zones/{lightingZone}/tariffs', [LightingController::class, 'tariff']);
+    Route::post('lighting/zones/{lightingZone}/policies', [LightingController::class, 'policy']);
+    Route::post('lighting/channels/{channel}/override', [LightingController::class, 'override']);
+    Route::post('lighting/channels/{channel}/emergency-off', [LightingController::class, 'emergency']);
+    Route::post('lighting/commands/{command}/retry', [LightingController::class, 'retry']);
+    Route::get('lighting/reports', [LightingController::class, 'reports']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);
