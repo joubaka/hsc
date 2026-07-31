@@ -94,6 +94,8 @@ Route::middleware('admin.auth')->group(function () {
     Route::get('booking-series/{bookingSeries}/preview', [BookingSeriesController::class, 'preview']);
     Route::post('booking-series/{bookingSeries}/submit', [BookingSeriesController::class, 'submit']);
     Route::post('booking-series/{bookingSeries}/action', [BookingSeriesController::class, 'action']);
+    Route::post('booking-series/occurrences/{occurrence}/amend', [BookingSeriesController::class, 'amendOccurrence']);
+    Route::post('booking-series/occurrences/{occurrence}/move', [BookingSeriesController::class, 'moveOccurrence']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);

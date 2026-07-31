@@ -17,7 +17,7 @@ class BookingRuleEvaluator
         private BookingPriceCalculator $prices,
     ) {}
 
-    public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null): array
+    public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null, ?int $ignoreBookingId = null): array
     {
         $facility->loadMissing(['venue', 'sportCode', 'openingHours', 'group']);
         $profile = $this->profiles->resolve($user, $member, $facility, $start);
@@ -50,6 +50,7 @@ class BookingRuleEvaluator
         $bufferedStart = $start->copy()->subMinutes($rules['buffer_before_minutes']);
         $bufferedEnd = $end->copy()->addMinutes($rules['buffer_after_minutes']);
         $bookingConflict = Booking::where('facility_id', $facility->id)->whereIn('status', ['pending_payment', 'confirmed'])
+            ->when($ignoreBookingId, fn ($query) => $query->whereKeyNot($ignoreBookingId))
             ->where('starts_at', '<', $bufferedEnd)->where('ends_at', '>', $bufferedStart)->exists();
         $add('booking_conflict', ! $bookingConflict, 'This time is no longer available.');
         $holdConflict = BookingHold::where('facility_id', $facility->id)->where('status', 'active')->where('expires_at', '>', now())
@@ -57,9 +58,13 @@ class BookingRuleEvaluator
             ->where('starts_at', '<', $bufferedEnd)->where('ends_at', '>', $bufferedStart)->exists();
         $add('hold_conflict', ! $holdConflict, 'Another member is currently completing this booking.');
         if ($member) {
-            $future = Booking::where('member_id', $member->id)->whereIn('status', ['pending_payment', 'confirmed'])->where('starts_at', '>', now())->count();
+            $future = Booking::where('member_id', $member->id)->whereIn('status', ['pending_payment', 'confirmed'])
+                ->when($ignoreBookingId, fn ($query) => $query->whereKeyNot($ignoreBookingId))
+                ->where('starts_at', '>', now())->count();
             $add('future_quota', $future < $rules['max_future_bookings'], "You may hold up to {$rules['max_future_bookings']} future bookings.", ['limit' => $rules['max_future_bookings'], 'actual' => $future]);
-            $daily = Booking::where('member_id', $member->id)->whereIn('status', ['pending_payment', 'confirmed'])->whereDate('starts_at', $start)->count();
+            $daily = Booking::where('member_id', $member->id)->whereIn('status', ['pending_payment', 'confirmed'])
+                ->when($ignoreBookingId, fn ($query) => $query->whereKeyNot($ignoreBookingId))
+                ->whereDate('starts_at', $start)->count();
             $add('daily_quota', $rules['max_daily_bookings'] === null || $daily < $rules['max_daily_bookings'], 'Your daily booking allowance has been reached.', ['limit' => $rules['max_daily_bookings'], 'actual' => $daily]);
         }
         $add('guest_limit', $rules['guest_allowed'] && $guestCount <= $rules['max_guests'], "A maximum of {$rules['max_guests']} guests is allowed.", ['actual' => $guestCount]);

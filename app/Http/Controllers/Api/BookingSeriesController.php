@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BookingSeries;
+use App\Models\BookingSeriesOccurrence;
 use App\Models\Facility;
 use App\Services\BookingAccessService;
+use App\Services\BookingOccurrenceAmendmentService;
 use App\Services\BookingSeriesMaterializationService;
 use App\Services\BookingSeriesPreviewService;
 use App\Support\Audit;
@@ -107,6 +109,34 @@ class BookingSeriesController extends Controller
         Audit::record("booking_series.{$data['action']}", $bookingSeries, [], ['reason' => $data['reason'] ?? null, 'result' => $result ? ['created' => $result['created']] : null]);
 
         return response()->json(['series' => $bookingSeries->fresh(), 'materialization' => $result]);
+    }
+
+    public function amendOccurrence(Request $request, BookingSeriesOccurrence $occurrence, BookingOccurrenceAmendmentService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'facility_id' => 'nullable|exists:facilities,id', 'starts_at' => 'nullable|date|after:now',
+            'ends_at' => 'nullable|date|after:starts_at', 'duration_minutes' => 'nullable|integer|between:15,480',
+            'guest_count' => 'nullable|integer|between:0,20', 'notes' => 'nullable|string|max:1000',
+            'participants' => 'nullable|array|max:12', 'participants.*.member_id' => 'nullable|exists:members,id',
+            'participants.*.participant_type' => 'required_with:participants|in:member,guest',
+            'participants.*.display_name' => 'required_with:participants|string|max:100',
+            'reason' => 'nullable|string|max:500', 'idempotency_key' => 'required|uuid', 'series_version' => 'required|integer|min:1',
+        ]);
+        abort_unless((int) $occurrence->series_version === (int) $data['series_version'], 409, 'The series version changed. Refresh before continuing.');
+
+        return response()->json($service->amend($request->user(), $occurrence, collect($data)->except(['reason', 'idempotency_key', 'series_version'])->all(), $data['idempotency_key'], $data['reason'] ?? null));
+    }
+
+    public function moveOccurrence(Request $request, BookingSeriesOccurrence $occurrence, BookingOccurrenceAmendmentService $service): JsonResponse
+    {
+        abort_unless(app(BookingAccessService::class)->canManage($request->user(), $occurrence->series->facility), 403);
+        $data = $request->validate([
+            'facility_id' => 'required|exists:facilities,id', 'starts_at' => 'nullable|date|after:now',
+            'reason' => 'required|string|min:3|max:500', 'idempotency_key' => 'required|uuid', 'series_version' => 'required|integer|min:1',
+        ]);
+        abort_unless((int) $occurrence->series_version === (int) $data['series_version'], 409, 'The series version changed. Refresh before continuing.');
+
+        return response()->json($service->amend($request->user(), $occurrence, collect($data)->except(['reason', 'idempotency_key', 'series_version'])->all(), $data['idempotency_key'], $data['reason']));
     }
 
     private function authorizeView(Request $request, BookingSeries $series): void

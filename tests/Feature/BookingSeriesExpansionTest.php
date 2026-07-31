@@ -170,6 +170,21 @@ class BookingSeriesExpansionTest extends TestCase
         app(PaymentService::class)->confirm($admin, $payment);
         app(PaymentService::class)->allocate($admin, $payment, $invoice, $originalTotal, 'series-payment-allocation');
         $occurrences = BookingSeries::findOrFail($series['id'])->occurrences()->with('booking')->orderBy('occurrence_number')->get();
+        $originalStart = $occurrences[0]->booking->starts_at->copy();
+        $replacementStart = $originalStart->copy()->addHours(4);
+        $amendmentResponse = $this->withToken('series-finance')->postJson("/api/booking-series/occurrences/{$occurrences[0]->id}/amend", [
+            'starts_at' => $replacementStart->toIso8601String(), 'duration_minutes' => 60,
+            'series_version' => 1, 'idempotency_key' => (string) Str::uuid(), 'reason' => 'Move this session only',
+        ]);
+        $amendmentResponse->assertOk()->assertJsonPath('id', $occurrences[0]->id);
+        $movedStart = $occurrences[0]->booking->fresh()->starts_at;
+        $this->assertTrue($movedStart->equalTo($replacementStart));
+        $this->withToken('series-finance')->postJson("/api/booking-series/occurrences/{$occurrences[0]->id}/amend", [
+            'starts_at' => $occurrences[2]->booking->starts_at->toIso8601String(), 'duration_minutes' => 60,
+            'series_version' => 1, 'idempotency_key' => (string) Str::uuid(), 'reason' => 'Conflicting move',
+        ])->assertUnprocessable();
+        $this->assertTrue($occurrences[0]->booking->fresh()->starts_at->equalTo($movedStart));
+        $this->assertDatabaseCount('booking_series_mutations', 1);
         $cancelledBooking = $occurrences[1]->booking;
         $compensation = app(BookingFinancialCompensationService::class)->cancel($admin, $cancelledBooking, 'Series occurrence cancellation', (string) Str::uuid());
         $repeat = app(BookingFinancialCompensationService::class)->cancel($admin, $cancelledBooking->fresh(), 'Repeated cancellation', (string) Str::uuid());
