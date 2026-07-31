@@ -2,6 +2,15 @@
 
 namespace Database\Seeders;
 
+use App\Models\Booking;
+use App\Models\BookingAllowancePolicy;
+use App\Models\BookingHold;
+use App\Models\BookingPolicy;
+use App\Models\BookingPricingRule;
+use App\Models\BookingSetting;
+use App\Models\Facility;
+use App\Models\FacilityGroup;
+use App\Models\FacilityTag;
 use App\Models\FinancialSetting;
 use App\Models\Household;
 use App\Models\Member;
@@ -11,6 +20,7 @@ use App\Models\Payment;
 use App\Models\SportCode;
 use App\Models\SportMembership;
 use App\Models\User;
+use App\Models\Venue;
 use App\Services\InvoiceService;
 use App\Services\PaymentService;
 use Illuminate\Database\Seeder;
@@ -241,6 +251,98 @@ class DatabaseSeeder extends Seeder
             ]));
             $paymentService->allocate($systemUser, $payment, $invoice, $invoice->outstanding_amount, 'seed-paid-allocation');
         }
+
+        BookingSetting::firstOrCreate([], ['timezone' => 'Africa/Johannesburg', 'currency' => 'ZAR', 'hold_minutes' => 10, 'default_hourly_rate_cents' => 12000]);
+        $venue = Venue::updateOrCreate(['code' => 'HSC-MAIN'], ['name' => 'Hermanus Sports Club', 'address' => 'Hermanus', 'timezone' => 'Africa/Johannesburg', 'active' => true]);
+        $groups = collect([
+            ['code' => 'TENNIS-COURTS', 'name' => 'Tennis courts', 'sport_code_id' => $codes['tennis']->id],
+            ['code' => 'PADEL-COURTS', 'name' => 'Padel courts', 'sport_code_id' => $codes['padel']->id],
+            ['code' => 'OTHER-COURTS', 'name' => 'Other courts', 'sport_code_id' => null],
+        ])->mapWithKeys(fn ($row) => [$row['code'] => FacilityGroup::updateOrCreate(['code' => $row['code']], $row)]);
+        $tags = collect(['Floodlit', 'Hard court', 'Outdoor', 'Indoor', 'Wheelchair accessible'])->mapWithKeys(function ($name) {
+            $tag = FacilityTag::updateOrCreate(['slug' => str($name)->slug()], ['name' => $name]);
+
+            return [$name => $tag];
+        });
+        $facilityRows = [];
+        foreach (range(1, 4) as $number) {
+            $facilityRows[] = ["Tennis Court {$number}", "TEN-{$number}", 'tennis_court', 'tennis', 'TENNIS-COURTS'];
+        }
+        foreach (range(1, 2) as $number) {
+            $facilityRows[] = ["Padel Court {$number}", "PAD-{$number}", 'padel_court', 'padel', 'PADEL-COURTS'];
+        }
+        $facilityRows[] = ['Squash Court 1', 'SQU-1', 'squash_court', 'squash', 'OTHER-COURTS'];
+        $facilityRows[] = ['Netball Court', 'NET-1', 'netball_court', 'netball', 'OTHER-COURTS'];
+        $facilities = collect();
+        foreach ($facilityRows as $index => [$name, $code, $type, $sport, $group]) {
+            $facility = Facility::updateOrCreate(['code' => $code], [
+                'venue_id' => $venue->id, 'sport_code_id' => $codes[$sport]->id, 'facility_group_id' => $groups[$group]->id,
+                'name' => $name, 'facility_type' => $type, 'surface_type' => $type === 'squash_court' ? 'timber' : 'hard',
+                'indoor' => $type === 'squash_court', 'capacity' => 4, 'description' => "Bookable {$name} at Hermanus Sports Club.",
+                'lighting_available' => in_array($sport, ['tennis', 'padel']), 'publicly_visible' => true, 'bookable' => true,
+                'active' => true, 'display_order' => $index + 1, 'default_duration_minutes' => 60, 'start_interval_minutes' => 30,
+            ]);
+            $facility->tags()->syncWithoutDetaching([$tags['Hard court']->id, $tags[$type === 'squash_court' ? 'Indoor' : 'Outdoor']->id]);
+            foreach (range(0, 6) as $day) {
+                $facility->openingHours()->updateOrCreate(
+                    ['day_of_week' => $day, 'opens_at' => '07:00:00', 'closes_at' => '21:00:00'],
+                    ['active' => true]
+                );
+            }
+            $facilities->put($code, $facility);
+        }
+        BookingPolicy::updateOrCreate(['name' => 'Central adult booking defaults'], [
+            'policy_type' => 'duration', 'scope_type' => 'central', 'scope_id' => null, 'profile' => 'adult_member',
+            'rules' => ['advance_days' => 7, 'min_duration_minutes' => 30, 'max_duration_minutes' => 120, 'max_future_bookings' => 4, 'max_daily_bookings' => 2],
+            'priority' => 1, 'version' => 1, 'active' => true,
+        ]);
+        BookingPolicy::updateOrCreate(['name' => 'Junior booking limits'], [
+            'policy_type' => 'duration', 'scope_type' => 'central', 'scope_id' => null, 'profile' => 'junior_member',
+            'rules' => ['advance_days' => 5, 'max_duration_minutes' => 90, 'max_future_bookings' => 3], 'priority' => 2, 'version' => 1, 'active' => true,
+        ]);
+        BookingPolicy::updateOrCreate(['name' => 'Standard cancellation'], [
+            'policy_type' => 'cancellation', 'scope_type' => 'central', 'rules' => ['cancellation_hours' => 24, 'refund_percentage' => 100],
+            'priority' => 1, 'version' => 1, 'active' => true,
+        ]);
+        BookingPricingRule::updateOrCreate(['name' => 'Off-peak court rate'], [
+            'scope_type' => 'central', 'pricing_method' => 'hourly', 'amount_cents' => 12000, 'guest_fee_cents' => 5000,
+            'priority' => 1, 'peak' => false, 'active' => true,
+        ]);
+        BookingPricingRule::updateOrCreate(['name' => 'Tennis evening peak'], [
+            'scope_type' => 'facility_group', 'scope_id' => $groups['TENNIS-COURTS']->id, 'starts_at' => '17:00', 'ends_at' => '20:00',
+            'pricing_method' => 'hourly', 'amount_cents' => 18000, 'guest_fee_cents' => 5000, 'priority' => 20, 'peak' => true, 'active' => true,
+        ]);
+        BookingAllowancePolicy::updateOrCreate(['name' => 'Adult weekly included hour'], [
+            'sport_code_id' => $codes['tennis']->id, 'facility_group_id' => $groups['TENNIS-COURTS']->id, 'profile' => 'adult_member',
+            'included_minutes' => 60, 'included_bookings' => 1, 'recurrence' => 'week', 'peak_scope' => 'all', 'active' => true,
+        ]);
+        $facilities['TEN-4']->closures()->updateOrCreate(['title' => 'Court resurfacing'], [
+            'closure_type' => 'maintenance', 'starts_at' => now()->addDays(3)->setTime(9, 0), 'ends_at' => now()->addDays(3)->setTime(13, 0),
+            'public_message' => 'Temporarily unavailable for maintenance.', 'private_notes' => 'Seed demonstration closure.',
+            'active' => true, 'created_by_user_id' => $systemUser->id,
+        ]);
+        BookingHold::updateOrCreate(['idempotency_key' => '00000000-0000-4000-8000-000000000001'], [
+            'hold_reference' => '10000000-0000-4000-8000-000000000001', 'facility_id' => $facilities['PAD-1']->id,
+            'user_id' => $systemUser->id, 'member_id' => $anna->id, 'starts_at' => now()->addDays(2)->setTime(10, 0),
+            'ends_at' => now()->addDays(2)->setTime(11, 0), 'expires_at' => now()->addMinutes(10), 'status' => 'active',
+            'rule_snapshot' => ['seed' => true], 'price_snapshot' => ['total_amount' => 12000], 'cancellation_snapshot' => ['version' => 1],
+        ]);
+        Booking::updateOrCreate(['confirmation_key' => '00000000-0000-4000-8000-000000000002'], [
+            'booking_reference' => 'BKG-SEED-CONFIRMED', 'facility_id' => $facilities['TEN-1']->id, 'sport_code_id' => $codes['tennis']->id,
+            'member_id' => $anna->id, 'created_by_user_id' => $systemUser->id, 'status' => 'confirmed', 'payment_status' => 'covered_by_allowance',
+            'starts_at' => now()->addDays(2)->setTime(14, 0), 'ends_at' => now()->addDays(2)->setTime(15, 0), 'duration_minutes' => 60,
+            'profile' => 'adult_member', 'currency' => 'ZAR', 'gross_amount' => 12000, 'allowance_amount' => 12000, 'total_amount' => 0,
+            'rule_snapshot' => ['seed' => true], 'price_snapshot' => ['gross_amount' => 12000, 'allowance_amount' => 12000, 'total_amount' => 0],
+            'allowance_snapshot' => ['minutes' => 60], 'cancellation_snapshot' => ['version' => 1, 'refund_percentage' => 100],
+        ]);
+        Booking::updateOrCreate(['confirmation_key' => '00000000-0000-4000-8000-000000000003'], [
+            'booking_reference' => 'BKG-SEED-CANCELLED', 'facility_id' => $facilities['TEN-2']->id, 'sport_code_id' => $codes['tennis']->id,
+            'member_id' => $anna->id, 'created_by_user_id' => $systemUser->id, 'status' => 'cancelled', 'payment_status' => 'not_required',
+            'starts_at' => now()->addDay()->setTime(12, 0), 'ends_at' => now()->addDay()->setTime(13, 0), 'duration_minutes' => 60,
+            'profile' => 'adult_member', 'currency' => 'ZAR', 'total_amount' => 0, 'rule_snapshot' => ['seed' => true],
+            'price_snapshot' => ['total_amount' => 0], 'cancellation_snapshot' => ['version' => 1], 'cancelled_at' => now(),
+            'cancellation_reason' => 'Seed demonstration',
+        ]);
 
         if ($password = env('HSC_ADMIN_PASSWORD')) {
             User::updateOrCreate(['email' => env('HSC_ADMIN_EMAIL', 'admin@hsc.local')], [

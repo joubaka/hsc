@@ -44,4 +44,19 @@ export default [
     to: { name: 'financial-settings' },
     icon: { icon: 'tabler-settings-dollar' },
   },
+  {
+    title: 'Court bookings',
+    to: { name: 'booking-calendar' },
+    icon: { icon: 'tabler-calendar-event' },
+  },
+  {
+    title: 'Facilities',
+    to: { name: 'booking-facilities' },
+    icon: { icon: 'tabler-building-stadium' },
+  },
+  {
+    title: 'Rule simulator',
+    to: { name: 'booking-rule-simulator' },
+    icon: { icon: 'tabler-test-pipe' },
+  },
 ]
