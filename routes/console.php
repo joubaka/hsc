@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 Schedule::command('bookings:expire-holds')->everyMinute()->withoutOverlapping();
 Schedule::command('bookings:recheck-series-conflicts')->hourly()->withoutOverlapping();
+Schedule::command('lighting:dispatch-due')->everyMinute()->withoutOverlapping();
+Schedule::command('lighting:reconcile')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('lighting:health-check')->everyFifteenMinutes()->withoutOverlapping();
