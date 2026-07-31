@@ -102,36 +102,4 @@ class BookingService
 
         return $booking->fresh(['facility', 'invoice']);
     }
-
-    public function cancel(User $user, Booking $booking, string $reason): Booking
-    {
-        abort_unless($booking->member_id === $user->member_id || app(BookingAccessService::class)->canManage($user, $booking->facility), 403);
-        if ($booking->status === 'cancelled') {
-            return $booking;
-        }
-
-        return DB::transaction(function () use ($user, $booking, $reason) {
-            $booking = Booking::lockForUpdate()->findOrFail($booking->id);
-            $refundPercentage = now()->lte(Carbon::parse($booking->cancellation_snapshot['cancellation_deadline']))
-                ? (int) $booking->cancellation_snapshot['refund_percentage'] : 0;
-            if ($booking->invoice && $booking->invoice->status === 'issued' && $booking->invoice->paid_amount === 0) {
-                app(InvoiceService::class)->voidBookingInvoice($user, $booking->invoice, $booking, "Booking cancelled: {$reason}");
-            } elseif ($booking->invoice && $refundPercentage > 0 && $booking->invoice->outstanding_amount < $booking->invoice->total_amount) {
-                $amount = intdiv($booking->invoice->total_amount * $refundPercentage, 100);
-                $line = $booking->invoice->lines()->first();
-                $note = app(CreditNoteService::class)->create($user, $booking->invoice, [[
-                    'invoice_line_id' => $line->id, 'financial_owner_type' => $line->financial_owner_type,
-                    'sport_code_id' => $line->sport_code_id, 'description' => "Booking cancellation credit: {$reason}", 'amount' => $amount,
-                ]], $reason);
-                $note = app(CreditNoteService::class)->issue($user, $note);
-                app(CreditNoteService::class)->apply($user, $note, $booking->invoice, min($amount, $booking->invoice->outstanding_amount), 'booking-cancel-'.$booking->id);
-            }
-            $booking->allowanceUsage?->update(['restored_at' => now()]);
-            $booking->update(['status' => 'cancelled', 'payment_status' => $refundPercentage ? 'refunded' : $booking->payment_status, 'cancelled_at' => now(), 'cancelled_by_user_id' => $user->id, 'cancellation_reason' => $reason]);
-            Audit::record('booking.cancelled', $booking, [], ['reason' => $reason, 'refund_percentage' => $refundPercentage]);
-            event(new \App\Events\BookingCancelled($booking->id));
-
-            return $booking->fresh(['facility', 'invoice']);
-        });
-    }
 }

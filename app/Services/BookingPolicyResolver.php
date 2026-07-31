@@ -23,6 +23,7 @@ class BookingPolicyResolver
             'max_daily_bookings' => null, 'max_weekly_minutes' => null, 'max_peak_bookings' => null,
             'guest_allowed' => true, 'max_guests' => 3,
             'cancellation_hours' => 24, 'editing_hours' => 4, 'refund_percentage' => 100,
+            'refund_method' => 'credit', 'policy_band' => 'standard',
         ];
         $applied = [];
         $scopeIds = [

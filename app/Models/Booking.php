@@ -46,6 +46,11 @@ class Booking extends Model
         return $this->hasOne(BookingAllowanceUsage::class);
     }
 
+    public function cancellationCompensation()
+    {
+        return $this->hasOne(BookingCancellationCompensation::class);
+    }
+
     protected static function booted(): void
     {
         static::deleting(fn () => throw new \LogicException('Bookings cannot be hard deleted.'));

@@ -28,6 +28,11 @@ class Payment extends Model
         return $this->hasOne(Receipt::class);
     }
 
+    public function transactions()
+    {
+        return $this->hasMany(FinancialTransaction::class);
+    }
+
     protected static function booted(): void
     {
         static::deleting(fn (Payment $payment) => $payment->status === 'pending' ?: throw new \LogicException('Confirmed payments cannot be deleted.'));

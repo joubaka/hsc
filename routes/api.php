@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\BookingPolicyController;
+use App\Http\Controllers\Api\BookingRefundController;
 use App\Http\Controllers\Api\CreditNoteController;
 use App\Http\Controllers\Api\FacilityController;
 use App\Http\Controllers\Api\FacilityScheduleController;
@@ -82,7 +83,10 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('booking/holds', [BookingController::class, 'hold']);
     Route::post('booking/holds/{hold}/confirm', [BookingController::class, 'confirm']);
     Route::post('bookings/{booking}/recognize-payment', [BookingController::class, 'recognizePayment']);
+    Route::get('bookings/{booking}/cancellation-preview', [BookingController::class, 'cancellationPreview']);
     Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel']);
+    Route::get('booking/refund-requests', [BookingRefundController::class, 'index']);
+    Route::post('booking/refund-requests/{refundRequest}/complete', [BookingRefundController::class, 'complete']);
 
     Route::prefix('membership-setup')->group(function () {
         Route::get('/', [MembershipSetupController::class, 'index']);

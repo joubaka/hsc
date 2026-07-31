@@ -8,6 +8,7 @@ use App\Models\BookingHold;
 use App\Models\Facility;
 use App\Models\Member;
 use App\Services\BookingAccessService;
+use App\Services\BookingFinancialCompensationService;
 use App\Services\BookingRuleEvaluator;
 use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +20,12 @@ class BookingController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = Booking::with(['facility:id,name,code,sport_code_id', 'invoice:id,invoice_number,status,total_amount,outstanding_amount'])
+        $query = Booking::with([
+            'facility:id,name,code,sport_code_id',
+            'invoice:id,invoice_number,status,total_amount,paid_amount,outstanding_amount',
+            'cancellationCompensation.creditNote:id,credit_note_number',
+            'cancellationCompensation.refundRequest:id,booking_cancellation_compensation_id,status,entitlement_amount,external_reference',
+        ])
             ->when(! $user->isCentralAdministrator(), function ($q) use ($user) {
                 if ($user->member_id) {
                     $q->where(fn ($own) => $own->where('member_id', $user->member_id)
@@ -37,7 +43,7 @@ class BookingController extends Controller
         $own = $booking->member_id === $request->user()->member_id;
         abort_unless($own || app(BookingAccessService::class)->canView($request->user(), $booking->facility), 403);
 
-        return response()->json($booking->load(['facility.venue', 'participants', 'invoice.allocations.payment', 'allowanceUsage']));
+        return response()->json($booking->load(['facility.venue', 'participants', 'invoice.allocations.payment', 'allowanceUsage', 'cancellationCompensation.creditNote', 'cancellationCompensation.refundRequest']));
     }
 
     public function simulate(Request $request, BookingRuleEvaluator $evaluator): JsonResponse
@@ -76,11 +82,19 @@ class BookingController extends Controller
         return response()->json($service->recognizePayment($request->user(), $booking));
     }
 
-    public function cancel(Request $request, Booking $booking, BookingService $service): JsonResponse
+    public function cancellationPreview(Request $request, Booking $booking, BookingFinancialCompensationService $service): JsonResponse
     {
-        $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:500']]);
+        return response()->json($service->preview($request->user(), $booking));
+    }
 
-        return response()->json($service->cancel($request->user(), $booking, $data['reason']));
+    public function cancel(Request $request, Booking $booking, BookingFinancialCompensationService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+            'idempotency_key' => ['required', 'uuid'],
+        ]);
+
+        return response()->json($service->cancel($request->user(), $booking, $data['reason'], $data['idempotency_key']));
     }
 
     private function slotData(Request $request): array

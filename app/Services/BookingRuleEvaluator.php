@@ -69,7 +69,8 @@ class BookingRuleEvaluator
             'version' => max(collect($policy['applied'])->where('type', 'cancellation')->pluck('version')->all() ?: [1]),
             'cancellation_deadline' => $start->copy()->subHours($rules['cancellation_hours'])->toIso8601String(),
             'editing_deadline' => $start->copy()->subHours($rules['editing_hours'])->toIso8601String(),
-            'refund_percentage' => $rules['refund_percentage'], 'late_treatment' => 'no_refund',
+            'refund_percentage' => $rules['refund_percentage'], 'refund_method' => $rules['refund_method'],
+            'policy_band' => $rules['policy_band'], 'late_treatment' => 'no_refund',
             'weather_treatment' => 'credit', 'club_closure_treatment' => 'full_credit', 'no_show_treatment' => 'no_refund',
         ];
 
