@@ -35,9 +35,28 @@ class LightingSchedulePlanner
                 $key = hash('sha256', $channelId.'|'.$g['start']->toIso8601String().'|'.$g['end']->toIso8601String().'|'.implode(',', $g['ids']));
                 $activeKeys[] = $key;
                 $interval = LightingScheduleInterval::firstOrCreate(['planning_key' => $key], ['lighting_device_channel_id' => $channelId, 'starts_at' => $g['start'], 'ends_at' => $g['end'], 'status' => 'planned']);
+                $reactivated = ! $interval->wasRecentlyCreated && $interval->status === 'superseded';
+                if ($reactivated) {
+                    $interval->update([
+                        'lighting_device_channel_id' => $channelId,
+                        'starts_at' => $g['start'],
+                        'ends_at' => $g['end'],
+                        'status' => 'planned',
+                    ]);
+                }
                 $interval->reservations()->sync($g['ids']);
                 foreach (['switch_on' => $g['start'], 'switch_off' => $g['end']] as $type => $due) {
-                    LightingCommand::firstOrCreate(['idempotency_key' => "interval:{$interval->id}:{$type}"], ['command_uuid' => (string) Str::uuid(), 'lighting_schedule_interval_id' => $interval->id, 'lighting_device_channel_id' => $channelId, 'command_type' => $type, 'due_at' => $due, 'status' => 'pending']);
+                    $command = LightingCommand::firstOrCreate(['idempotency_key' => "interval:{$interval->id}:{$type}"], ['command_uuid' => (string) Str::uuid(), 'lighting_schedule_interval_id' => $interval->id, 'lighting_device_channel_id' => $channelId, 'command_type' => $type, 'due_at' => $due, 'status' => 'pending']);
+                    if ($reactivated && $command->status === 'superseded') {
+                        $command->update([
+                            'due_at' => $due,
+                            'status' => 'pending',
+                            'next_attempt_at' => null,
+                            'processed_at' => null,
+                            'safe_error_code' => null,
+                            'provider_result_code' => null,
+                        ]);
+                    }
                 }
             }
             $obsolete = LightingScheduleInterval::where('lighting_device_channel_id', $channelId)->where('status', 'planned')->when($activeKeys, fn ($q) => $q->whereNotIn('planning_key', $activeKeys))->get();

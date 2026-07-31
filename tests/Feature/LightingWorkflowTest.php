@@ -10,11 +10,13 @@ use App\Models\LightingScheduleInterval;
 use App\Models\LightingSetting;
 use App\Models\LightingZone;
 use App\Models\User;
+use App\Services\BookingBillingService;
 use App\Services\LightingCommandDispatcher;
 use App\Services\LightingHostValidator;
 use App\Services\LightingQuoteService;
 use App\Services\LightingReservationService;
 use App\Services\LightingSchedulePlanner;
+use App\Services\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -132,6 +134,67 @@ class LightingWorkflowTest extends TestCase
         $this->assertSame(1, LightingScheduleInterval::where('status', 'planned')->whereHas('reservations', fn ($query) => $query->where('booking_id', $second->id))->count());
     }
 
+    public function test_payment_allocation_schedules_lighting_once_and_reversal_supersedes_activation(): void
+    {
+        $admin = User::where('role', 'hsc_super_admin')->firstOrFail();
+        $template = Booking::where('booking_reference', 'BKG-SEED-CONFIRMED')->firstOrFail();
+        $booking = $template->replicate()->fill([
+            'booking_reference' => 'BKG-LIGHT-PAYMENT',
+            'confirmation_key' => (string) Str::uuid(),
+            'invoice_id' => null,
+            'status' => 'pending_payment',
+            'payment_status' => 'unpaid',
+            'starts_at' => Carbon::parse('2026-08-04 18:00'),
+            'ends_at' => Carbon::parse('2026-08-04 19:00'),
+        ]);
+        $quote = app(LightingQuoteService::class)->quote($template->facility, $booking->starts_at, $booking->ends_at, $booking->profile, true);
+        $booking->fill([
+            'gross_amount' => 12000 + $quote['amount'],
+            'total_amount' => 12000 + $quote['amount'],
+            'lighting_snapshot' => $quote,
+        ])->save();
+        $invoice = app(BookingBillingService::class)->createInvoice($admin, $booking);
+        $this->assertSame(Booking::class, $invoice->source_type);
+        $reservation = app(LightingReservationService::class)->reserve($booking, $quote);
+        $payment = app(PaymentService::class)->record($admin, [
+            'payment_reference' => 'PAY-LIGHTING-TEST',
+            'member_id' => $booking->member_id,
+            'payer_name' => 'Lighting test member',
+            'currency' => 'ZAR',
+            'amount' => $invoice->total_amount,
+            'received_on' => now()->toDateString(),
+            'payment_method' => 'eft',
+            'external_reference' => 'LIGHTING-PAYMENT-TEST',
+            'bank_reference' => null,
+            'source' => 'manual',
+        ]);
+        $payment = app(PaymentService::class)->confirm($admin, $payment);
+        $allocation = app(PaymentService::class)->allocate($admin, $payment, $invoice, $invoice->total_amount, 'lighting-payment-allocation');
+        app(PaymentService::class)->allocate($admin, $payment->fresh(), $invoice->fresh(), $invoice->total_amount, 'lighting-payment-allocation');
+
+        $this->assertSame('confirmed', $booking->fresh()->status);
+        $this->assertSame('paid', $booking->fresh()->payment_status);
+        $this->assertSame('scheduled', $reservation->fresh()->status);
+        $this->assertSame(1, LightingScheduleInterval::whereHas('reservations', fn ($query) => $query->whereKey($reservation->id))->where('status', 'planned')->count());
+        $this->assertSame(2, LightingCommand::where('lighting_reservation_id', $reservation->id)->orWhereHas('interval.reservations', fn ($query) => $query->whereKey($reservation->id))->count());
+
+        app(PaymentService::class)->reverseAllocation($admin, $allocation, 'Acceptance reversal');
+
+        $this->assertSame('pending_payment', $booking->fresh()->status);
+        $this->assertSame('unpaid', $booking->fresh()->payment_status);
+        $this->assertSame('pending_payment', $reservation->fresh()->status);
+        $this->assertSame(0, LightingScheduleInterval::whereHas('reservations', fn ($query) => $query->whereKey($reservation->id))->where('status', 'planned')->count());
+        $this->assertSame(2, LightingCommand::whereHas('interval.reservations', fn ($query) => $query->whereKey($reservation->id))->where('status', 'superseded')->count());
+
+        app(PaymentService::class)->allocate($admin, $payment->fresh(), $invoice->fresh(), $invoice->total_amount, 'lighting-payment-reallocation');
+
+        $this->assertSame('confirmed', $booking->fresh()->status);
+        $this->assertSame('scheduled', $reservation->fresh()->status);
+        $this->assertSame(1, LightingScheduleInterval::whereHas('reservations', fn ($query) => $query->whereKey($reservation->id))->where('status', 'planned')->count());
+        $this->assertSame(2, LightingCommand::whereHas('interval.reservations', fn ($query) => $query->whereKey($reservation->id))->where('status', 'pending')->count());
+        $this->assertSame(2, LightingCommand::whereHas('interval.reservations', fn ($query) => $query->whereKey($reservation->id))->count());
+    }
+
     public function test_dry_run_dispatch_is_idempotent_and_stale_or_disabled_commands_are_blocked(): void
     {
         LightingSetting::whereNull('sport_code_id')->update(['automation_enabled' => true, 'dry_run' => true]);
@@ -146,7 +209,16 @@ class LightingWorkflowTest extends TestCase
         $this->assertSame(1, $first['succeeded']);
         $this->assertSame('succeeded', $command->fresh()->status);
         $this->assertSame('dry_run_on', $command->fresh()->provider_result_code);
+        $this->assertSame('on', $reservation->fresh()->status);
+        $this->assertNotNull($reservation->fresh()->actual_on_at);
         $this->assertSame(0, $second['examined']);
+
+        $off = $command->interval->commands()->where('command_type', 'switch_off')->firstOrFail();
+        $off->update(['due_at' => now()]);
+        $offResult = app(LightingCommandDispatcher::class)->dispatch();
+        $this->assertSame(1, $offResult['succeeded']);
+        $this->assertSame('off', $reservation->fresh()->status);
+        $this->assertNotNull($reservation->fresh()->actual_off_at);
 
         $interval = $command->interval;
         $stale = LightingCommand::create([
@@ -314,6 +386,12 @@ class LightingWorkflowTest extends TestCase
         $invoiceTotal = $reservation->booking->invoice?->total_amount;
         $override = $this->withToken('lighting-simulation-admin')->postJson("/api/lighting/channels/{$channel->id}/override", ['state' => 'on', 'minutes' => 30, 'reason' => 'Acceptance override'])->assertCreated()->json();
         $this->assertDatabaseHas('lighting_manual_overrides', ['id' => $override['id'], 'reason' => 'Acceptance override']);
+        $overrideCommand = LightingCommand::where('idempotency_key', "manual-override:{$override['id']}")->firstOrFail();
+        $overrideResult = app(LightingCommandDispatcher::class)->dispatch();
+        $this->assertSame(1, $overrideResult['succeeded']);
+        $this->assertSame('succeeded', $overrideCommand->fresh()->status);
+        $this->assertSame('dry_run_on', $overrideCommand->fresh()->provider_result_code);
+        $this->assertSame('on', $channel->fresh()->last_known_state);
         $this->withToken('lighting-simulation-admin')->postJson("/api/lighting/channels/{$channel->id}/override", ['state' => 'on', 'minutes' => 30, 'reason' => ''])->assertUnprocessable();
         $pending = LightingCommand::create(['command_uuid' => (string) Str::uuid(), 'lighting_device_channel_id' => $channel->id, 'command_type' => 'switch_on', 'due_at' => now()->addMinute(), 'status' => 'pending', 'idempotency_key' => 'acceptance-emergency-pending']);
         $key = (string) Str::uuid();

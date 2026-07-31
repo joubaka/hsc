@@ -43,6 +43,14 @@ class LightingReservationService
         }
     }
 
+    public function markUnpaid(Booking $booking): void
+    {
+        foreach ($booking->lightingReservations()->whereIn('status', ['scheduled', 'manual_action_required'])->get() as $reservation) {
+            $reservation->update(['status' => 'pending_payment']);
+            $this->planAfterCommit($reservation->zone->lighting_device_channel_id);
+        }
+    }
+
     public function cancel(Booking $booking): void
     {
         foreach ($booking->lightingReservations()->whereNotIn('status', ['cancelled', 'off'])->get() as $r) {

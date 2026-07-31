@@ -99,7 +99,8 @@ class PaymentService
             $unallocated = $payment->amount - $allocated;
             $payment->update(['allocated_amount' => $allocated, 'unallocated_amount' => $unallocated, 'status' => $unallocated === 0 ? 'allocated' : 'partially_allocated']);
             $this->ledger->recordInvoiceOwners($invoice, 'payment_allocation', $amount, "allocation:{$allocation->id}", null, $payment->id);
-            $this->reconciliation->reconcile($invoice);
+            $invoice = $this->reconciliation->reconcile($invoice);
+            app(BookingService::class)->syncInvoicePayment($invoice);
             Audit::record('payment.allocated', $allocation, [], ['payment_id' => $payment->id, 'invoice_id' => $invoice->id, 'amount' => $amount, 'currency' => $payment->currency]);
 
             return $allocation->load(['payment', 'invoice']);
@@ -120,7 +121,8 @@ class PaymentService
             $unallocated = $payment->amount - $allocated;
             $payment->update(['allocated_amount' => $allocated, 'unallocated_amount' => $unallocated, 'status' => $allocated === 0 ? 'confirmed' : ($unallocated === 0 ? 'allocated' : 'partially_allocated')]);
             $this->ledger->recordInvoiceOwners($invoice, 'allocation_reversal', -$allocation->amount, "allocation-reversal:{$allocation->id}", $reason, $payment->id);
-            $this->reconciliation->reconcile($invoice);
+            $invoice = $this->reconciliation->reconcile($invoice);
+            app(BookingService::class)->syncInvoicePayment($invoice);
             Audit::record('payment.allocation_reversed', $allocation, [], ['amount' => $allocation->amount, 'reason' => $reason]);
 
             return $allocation->fresh();

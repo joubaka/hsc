@@ -28,7 +28,8 @@ class LightingCommandDispatcher
             }$counts['examined']++;
             $channel = $command->channel;
             $interval = $command->interval;
-            $invalid = $command->command_type === 'switch_on' && (! $interval || $interval->ends_at->isPast() || $interval->status !== 'planned' || $interval->reservations->whereIn('status', ['scheduled', 'on'])->isEmpty());
+            $manualOverride = str_starts_with($command->idempotency_key, 'manual-override:');
+            $invalid = $command->command_type === 'switch_on' && ! $manualOverride && (! $interval || $interval->ends_at->isPast() || $interval->status !== 'planned' || $interval->reservations->whereIn('status', ['scheduled', 'on'])->isEmpty());
             $tooLong = $interval && $interval->starts_at->diffInMinutes($interval->ends_at) > $channel->maximum_continuous_on_minutes;
             if ($invalid || $tooLong || ! $channel->enabled || ! $channel->device->enabled) {
                 $command->update(['status' => 'cancelled', 'safe_error_code' => $tooLong ? 'maximum_on_exceeded' : 'command_obsolete', 'processed_at' => now()]);
@@ -39,7 +40,7 @@ class LightingCommandDispatcher
 
                 continue;
             }
-            if ($channel->manual_lock_state && $channel->manual_lock_expires_at?->isFuture()) {
+            if (! $manualOverride && $command->command_type !== 'emergency_off' && $channel->manual_lock_state && $channel->manual_lock_expires_at?->isFuture()) {
                 $command->update(['status' => 'superseded', 'safe_error_code' => 'manual_override_active', 'processed_at' => now()]);
                 $counts['skipped']++;
 
@@ -55,6 +56,19 @@ class LightingCommandDispatcher
                 if ($result->success) {
                     $c->update(['status' => 'succeeded', 'provider_result_code' => $result->code, 'processed_at' => now()]);
                     $channel->update(['last_known_state' => $result->state ?? $channel->last_known_state, 'last_state_checked_at' => now()]);
+                    if ($c->interval) {
+                        if ($c->command_type === 'switch_on') {
+                            $c->interval->reservations()->whereIn('lighting_reservations.status', ['scheduled', 'on'])->update([
+                                'status' => 'on',
+                                'actual_on_at' => now(),
+                            ]);
+                        } elseif ($c->command_type === 'switch_off') {
+                            $c->interval->reservations()->whereIn('lighting_reservations.status', ['scheduled', 'on'])->update([
+                                'status' => 'off',
+                                'actual_off_at' => now(),
+                            ]);
+                        }
+                    }
                     $counts['succeeded']++;
                 } else {
                     $settings = \App\Models\LightingSetting::whereNull('sport_code_id')->first();

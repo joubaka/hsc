@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingAllowanceUsage;
 use App\Models\BookingHold;
 use App\Models\Facility;
+use App\Models\Invoice;
 use App\Models\Member;
 use App\Models\User;
 use App\Support\Audit;
@@ -117,5 +118,32 @@ class BookingService
         Audit::record('booking.payment_linked', $booking, [], ['invoice_id' => $booking->invoice_id]);
 
         return $booking->fresh(['facility', 'invoice']);
+    }
+
+    public function syncInvoicePayment(Invoice $invoice): void
+    {
+        if ($invoice->source_type !== Booking::class) {
+            return;
+        }
+
+        $paid = $invoice->status === 'paid' && (int) $invoice->outstanding_amount === 0;
+
+        foreach (Booking::where('invoice_id', $invoice->id)->get() as $booking) {
+            if ($paid) {
+                if ($booking->status === 'pending_payment' || $booking->payment_status !== 'paid') {
+                    $booking->update(['status' => 'confirmed', 'payment_status' => 'paid']);
+                    app(LightingReservationService::class)->markPaid($booking);
+                    Audit::record('booking.payment_linked', $booking, [], ['invoice_id' => $invoice->id]);
+                }
+
+                continue;
+            }
+
+            if ($booking->status === 'confirmed' && $booking->payment_status === 'paid' && $booking->starts_at->isFuture()) {
+                $booking->update(['status' => 'pending_payment', 'payment_status' => 'unpaid']);
+                app(LightingReservationService::class)->markUnpaid($booking);
+                Audit::record('booking.payment_unlinked', $booking, [], ['invoice_id' => $invoice->id]);
+            }
+        }
     }
 }
