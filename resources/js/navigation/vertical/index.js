@@ -59,4 +59,9 @@ export default [
     to: { name: 'booking-rule-simulator' },
     icon: { icon: 'tabler-test-pipe' },
   },
+  {
+    title: 'Booking refunds',
+    to: { name: 'booking-refunds' },
+    icon: { icon: 'tabler-receipt-refund' },
+  },
 ]

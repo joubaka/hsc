@@ -23,6 +23,7 @@ declare module 'vue-router/auto-routes' {
     'book-acourt': RouteRecordInfo<'book-acourt', '/book-a-court', Record<never, never>, Record<never, never>>,
     'booking-calendar': RouteRecordInfo<'booking-calendar', '/booking-calendar', Record<never, never>, Record<never, never>>,
     'booking-facilities': RouteRecordInfo<'booking-facilities', '/booking-facilities', Record<never, never>, Record<never, never>>,
+    'booking-refunds': RouteRecordInfo<'booking-refunds', '/booking-refunds', Record<never, never>, Record<never, never>>,
     'booking-rule-simulator': RouteRecordInfo<'booking-rule-simulator', '/booking-rule-simulator', Record<never, never>, Record<never, never>>,
     'finance-invoices': RouteRecordInfo<'finance-invoices', '/finance-invoices', Record<never, never>, Record<never, never>>,
     'finance-payments': RouteRecordInfo<'finance-payments', '/finance-payments', Record<never, never>, Record<never, never>>,
