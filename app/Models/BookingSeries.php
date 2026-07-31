@@ -12,7 +12,7 @@ class BookingSeries extends Model
 
     protected function casts(): array
     {
-        return ['starts_on' => 'date', 'ends_on' => 'date', 'days_of_week' => 'array', 'monthly_pattern' => 'array', 'participant_template' => 'array', 'rules_snapshot' => 'array', 'pricing_strategy_snapshot' => 'array', 'cancellation_policy_snapshot' => 'array', 'submitted_at' => 'datetime', 'approved_at' => 'datetime', 'rejected_at' => 'datetime'];
+        return ['starts_on' => 'date', 'ends_on' => 'date', 'days_of_week' => 'array', 'monthly_pattern' => 'array', 'participant_template' => 'array', 'rules_snapshot' => 'array', 'pricing_strategy_snapshot' => 'array', 'cancellation_policy_snapshot' => 'array', 'lighting_requested' => 'boolean', 'submitted_at' => 'datetime', 'approved_at' => 'datetime', 'rejected_at' => 'datetime'];
     }
 
     public function facility()

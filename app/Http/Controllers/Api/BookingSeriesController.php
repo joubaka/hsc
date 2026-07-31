@@ -54,7 +54,7 @@ class BookingSeriesController extends Controller
     {
         $this->authorizeView($request, $bookingSeries);
 
-        return response()->json($bookingSeries->load(['facility', 'member', 'occurrences.booking.invoice']));
+        return response()->json($bookingSeries->load(['facility', 'member', 'occurrences.booking.invoice', 'occurrences.booking.lightingReservations.zone']));
     }
 
     public function update(Request $request, BookingSeries $bookingSeries): JsonResponse
@@ -290,6 +290,7 @@ class BookingSeriesController extends Controller
             'days_of_week' => 'nullable|array|max:7', 'days_of_week.*' => 'integer|between:1,7', 'monthly_pattern' => 'nullable|array',
             'occurrence_limit' => 'nullable|integer|between:1,104', 'guest_count' => 'integer|between:0,20', 'participant_template' => 'nullable|array|max:12',
             'billing_strategy' => 'required|in:no_charge,allowance_covered,invoice_each_occurrence,one_invoice_for_series',
+            'lighting_requested' => 'boolean',
             'booking_type' => 'nullable|string|max:40', 'member_notes' => 'nullable|string|max:1000', 'administrator_notes' => 'nullable|string|max:1000',
             'idempotency_key' => 'required|uuid',
         ]);

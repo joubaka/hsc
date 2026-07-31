@@ -40,7 +40,8 @@ class BookingOccurrenceAmendmentService
             $start = Carbon::parse($changes['starts_at'] ?? $booking->starts_at);
             $end = Carbon::parse($changes['ends_at'] ?? $start->copy()->addMinutes($changes['duration_minutes'] ?? $booking->duration_minutes));
             $member = Member::findOrFail($booking->member_id);
-            $result = $this->evaluator->evaluate($actor, $member, $facility, $start, $end, (int) ($changes['guest_count'] ?? $booking->guest_count), null, $booking->id);
+            $lightingRequested = (bool) ($changes['lighting_requested'] ?? ($booking->lighting_snapshot['applies'] ?? false));
+            $result = $this->evaluator->evaluate($actor, $member, $facility, $start, $end, (int) ($changes['guest_count'] ?? $booking->guest_count), null, $booking->id, $lightingRequested);
             abort_unless($result['eligible'], 422, $result['failures'][0]['member_message'] ?? 'The replacement slot is unavailable.');
             $old = $booking->only(['facility_id', 'starts_at', 'ends_at', 'duration_minutes', 'total_amount', 'allowance_amount']);
             $difference = (int) $result['price']['total_amount'] - (int) $booking->total_amount;
@@ -52,8 +53,10 @@ class BookingOccurrenceAmendmentService
                 'gross_amount' => $result['price']['gross_amount'], 'allowance_amount' => $result['price']['allowance_amount'],
                 'total_amount' => $result['price']['total_amount'], 'rule_snapshot' => ['profile' => $result['profile'], 'policies' => $result['policies'], 'checks' => $result['checks']],
                 'price_snapshot' => $result['price'], 'allowance_snapshot' => $result['allowance'], 'cancellation_snapshot' => $result['cancellation'],
+                'lighting_snapshot' => $result['lighting'],
                 'notes' => $changes['notes'] ?? $booking->notes,
             ]);
+            app(LightingReservationService::class)->reschedule($booking, $result['lighting']);
             $this->replaceAllowance($booking, $result['allowance']);
             if (array_key_exists('participants', $changes)) {
                 $booking->participants()->delete();

@@ -20,7 +20,7 @@ const form = reactive({
   starts_on: new Date(Date.now() + 86400000).toISOString().slice(0, 10), ends_on: '',
   start_time: '10:00', duration_minutes: 60, timezone: 'Africa/Johannesburg',
   recurrence_frequency: 'weekly', recurrence_interval: 1, days_of_week: [6],
-  occurrence_limit: 2, guest_count: 0, billing_strategy: 'invoice_each_occurrence',
+  occurrence_limit: 2, guest_count: 0, billing_strategy: 'invoice_each_occurrence', lighting_requested: false,
 })
 const mutation = reactive({ facility_id: null, starts_at: '', scope: 'occurrence', all_or_nothing: false })
 const money = value => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format((value || 0) / 100)
@@ -162,7 +162,8 @@ onMounted(load)
             <VRow><VCol cols="6"><strong>Member</strong><div>{{ selected.member?.first_name }} {{ selected.member?.last_name }}</div></VCol>
               <VCol cols="6"><strong>Facility</strong><div>{{ selected.facility?.name }}</div></VCol>
               <VCol cols="6"><strong>Status</strong><div>{{ label(selected.approval_status) }} · version {{ selected.version }}</div></VCol>
-              <VCol cols="6"><strong>Billing</strong><div>{{ label(selected.billing_strategy) }}</div></VCol></VRow>
+              <VCol cols="6"><strong>Billing</strong><div>{{ label(selected.billing_strategy) }}</div></VCol>
+              <VCol cols="6"><strong>Lighting</strong><div>{{ selected.lighting_requested ? 'Requested per occurrence' : 'Only when required' }}</div></VCol></VRow>
             <div class="d-flex flex-wrap gap-2 my-4">
               <VBtn size="small" variant="tonal" @click="runPreview">Preview</VBtn>
               <VBtn v-if="['draft','information_required'].includes(selected.approval_status)" size="small" @click="workflow('submit')">Submit</VBtn>
@@ -195,6 +196,7 @@ onMounted(load)
       <VCol cols="12" md="6"><VSelect v-model="form.facility_id" :items="facilities" item-title="name" item-value="id" label="Facility"/></VCol>
       <VCol cols="12" md="6"><VSelect v-model="form.series_type" :items="['member_recurring','coach_block','league_team','social_group','club_programme','tournament','other']" label="Series type"/></VCol>
       <VCol cols="12" md="6"><VSelect v-model="form.billing_strategy" :items="['invoice_each_occurrence','one_invoice_for_series','allowance_covered','no_charge']" label="Billing strategy"/></VCol>
+      <VCol cols="12"><VSwitch v-model="form.lighting_requested" color="warning" label="Request court lighting for eligible occurrences"/><div class="text-caption text-medium-emphasis">Required evening lighting is applied automatically. Every occurrence is revalidated before approval.</div></VCol>
       <VCol cols="6" md="3"><VTextField v-model="form.starts_on" type="date" label="Starts"/></VCol><VCol cols="6" md="3"><VTextField v-model="form.ends_on" type="date" label="Ends (optional)"/></VCol>
       <VCol cols="6" md="3"><VTextField v-model="form.start_time" type="time" label="Start time"/></VCol><VCol cols="6" md="3"><VSelect v-model="form.duration_minutes" :items="[30,60,90,120]" label="Minutes"/></VCol>
       <VCol cols="12" md="4"><VSelect v-model="form.recurrence_frequency" :items="['daily','weekly','monthly_fixed','monthly_ordinal']" label="Recurrence"/></VCol>
