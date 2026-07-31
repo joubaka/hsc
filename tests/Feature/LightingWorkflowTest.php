@@ -251,4 +251,77 @@ class LightingWorkflowTest extends TestCase
             'dry_run' => true,
         ])->assertOk()->assertJsonPath('dry_run', true);
     }
+
+    public function test_channel_zone_tariff_and_policy_mutations_are_scoped_and_persisted(): void
+    {
+        User::factory()->create(['role' => 'hsc_super_admin', 'active' => true, 'api_token_hash' => hash('sha256', 'lighting-ops-admin')]);
+        $device = LightingDevice::where('code', 'LIGHT-DEMO-DRY')->firstOrFail();
+        $channel = $this->withToken('lighting-ops-admin')->postJson("/api/lighting/devices/{$device->id}/channels", [
+            'channel_number' => 2, 'name' => 'Acceptance channel', 'enabled' => true, 'maximum_continuous_on_minutes' => 180,
+        ])->assertCreated()->json();
+        $this->withToken('lighting-ops-admin')->postJson("/api/lighting/devices/{$device->id}/channels", [
+            'channel_number' => 2, 'name' => 'Duplicate', 'enabled' => true, 'maximum_continuous_on_minutes' => 180,
+        ])->assertUnprocessable();
+        $this->withToken('lighting-ops-admin')->putJson("/api/lighting/devices/{$device->id}/channels/{$channel['id']}", [
+            'channel_number' => 2, 'name' => 'Acceptance channel updated', 'enabled' => false, 'maximum_continuous_on_minutes' => 120,
+        ])->assertOk()->assertJsonPath('enabled', false);
+
+        $tennis = \App\Models\SportCode::where('slug', 'tennis')->firstOrFail();
+        $padel = \App\Models\SportCode::where('slug', 'padel')->firstOrFail();
+        $facility = \App\Models\Facility::where('code', 'TEN-3')->firstOrFail();
+        $venue = $facility->venue;
+        $zonePayload = ['venue_id' => $venue->id, 'sport_code_id' => $tennis->id, 'lighting_device_channel_id' => $channel['id'], 'name' => 'Acceptance zone', 'code' => 'LIGHT-ACCEPTANCE-ZONE', 'active' => true, 'automatic_control_enabled' => false, 'provider_mode' => 'dry_run', 'pre_start_minutes' => 10, 'post_end_minutes' => 5, 'minimum_billable_minutes' => 30, 'billing_increment_minutes' => 15, 'maximum_continuous_on_minutes' => 120, 'financial_owner_type' => 'sport_code', 'facility_ids' => [$facility->id]];
+        $this->withToken('lighting-ops-admin')->postJson('/api/lighting/zones', $zonePayload)->assertUnprocessable();
+        $this->withToken('lighting-ops-admin')->putJson("/api/lighting/devices/{$device->id}/channels/{$channel['id']}", [
+            'channel_number' => 2, 'name' => 'Acceptance channel updated', 'enabled' => true, 'maximum_continuous_on_minutes' => 120,
+        ])->assertOk()->assertJsonPath('enabled', true);
+        $zone = $this->withToken('lighting-ops-admin')->postJson('/api/lighting/zones', $zonePayload)->assertCreated()->json();
+        $this->assertDatabaseHas('facility_lighting_zone', ['facility_id' => $facility->id, 'lighting_zone_id' => $zone['id']]);
+        $this->withToken('lighting-ops-admin')->postJson('/api/lighting/zones', [...$zonePayload, 'sport_code_id' => $padel->id, 'name' => 'Conflict', 'code' => 'LIGHT-ACCEPTANCE-CONFLICT', 'facility_ids' => []])->assertUnprocessable();
+
+        $this->withToken('lighting-ops-admin')->postJson("/api/lighting/zones/{$zone['id']}/tariffs", ['name' => 'Acceptance peak tariff', 'pricing_method' => 'hourly', 'amount_cents' => 7250, 'profile' => null, 'starts_at' => '18:00', 'ends_at' => '22:00', 'minimum_minutes' => 30, 'increment_minutes' => 15, 'financial_owner_type' => 'sport_code', 'active' => true, 'priority' => 90])->assertCreated();
+        $this->withToken('lighting-ops-admin')->postJson("/api/lighting/zones/{$zone['id']}/policies", ['strategy' => 'fixed_band', 'starts_at' => '18:00', 'ends_at' => '22:00', 'profile' => null, 'active' => true, 'priority' => 90])->assertCreated();
+        $this->assertDatabaseHas('lighting_tariffs', ['lighting_zone_id' => $zone['id'], 'amount_cents' => 7250, 'priority' => 90]);
+        $this->assertDatabaseHas('lighting_requirement_policies', ['lighting_zone_id' => $zone['id'], 'strategy' => 'fixed_band', 'priority' => 90]);
+    }
+
+    public function test_dry_run_failures_reconciliation_override_and_emergency_are_safe_and_idempotent(): void
+    {
+        User::factory()->create(['role' => 'hsc_super_admin', 'active' => true, 'api_token_hash' => hash('sha256', 'lighting-simulation-admin')]);
+        LightingSetting::whereNull('sport_code_id')->update(['automation_enabled' => true, 'dry_run' => true, 'retry_count' => 2, 'retry_delay_seconds' => 1]);
+        $device = LightingDevice::where('code', 'LIGHT-DEMO-DRY')->firstOrFail();
+        $reservation = LightingReservation::firstOrFail();
+        $reservation->update(['status' => 'scheduled']);
+        app(LightingSchedulePlanner::class)->planChannel($reservation->zone->lighting_device_channel_id);
+        $command = LightingCommand::where('command_type', 'switch_on')->firstOrFail();
+        $command->update(['due_at' => now(), 'next_attempt_at' => null, 'status' => 'pending']);
+
+        $this->withToken('lighting-simulation-admin')->putJson("/api/lighting/devices/{$device->id}/simulation", ['outcome' => 'retryable_timeout'])->assertOk();
+        $this->withToken('lighting-simulation-admin')->postJson('/api/lighting/actions/dispatch')->assertOk()->assertJsonPath('retried', 1);
+        $this->assertSame('retryable_failure', $command->fresh()->status);
+        $this->withToken('lighting-simulation-admin')->postJson('/api/lighting/actions/dispatch')->assertOk()->assertJsonPath('examined', 0);
+        $command->update(['next_attempt_at' => now()]);
+        $this->withToken('lighting-simulation-admin')->postJson('/api/lighting/actions/dispatch')->assertOk()->assertJsonPath('failed', 1);
+        $this->assertSame('permanent_failure', $command->fresh()->status);
+        $this->assertSame(1, \App\Models\LightingAlert::where('alert_type', 'dry_run_unreachable')->where('status', 'open')->count());
+
+        $channel = $reservation->zone->channel;
+        $this->withToken('lighting-simulation-admin')->putJson("/api/lighting/devices/{$device->id}/simulation", ['outcome' => 'unexpected_on'])->assertOk();
+        $this->withToken('lighting-simulation-admin')->postJson('/api/lighting/actions/reconcile')->assertOk();
+        $this->assertDatabaseHas('lighting_alerts', ['source_id' => $channel->id, 'alert_type' => 'state_mismatch', 'status' => 'open']);
+
+        $invoiceTotal = $reservation->booking->invoice?->total_amount;
+        $override = $this->withToken('lighting-simulation-admin')->postJson("/api/lighting/channels/{$channel->id}/override", ['state' => 'on', 'minutes' => 30, 'reason' => 'Acceptance override'])->assertCreated()->json();
+        $this->assertDatabaseHas('lighting_manual_overrides', ['id' => $override['id'], 'reason' => 'Acceptance override']);
+        $this->withToken('lighting-simulation-admin')->postJson("/api/lighting/channels/{$channel->id}/override", ['state' => 'on', 'minutes' => 30, 'reason' => ''])->assertUnprocessable();
+        $pending = LightingCommand::create(['command_uuid' => (string) Str::uuid(), 'lighting_device_channel_id' => $channel->id, 'command_type' => 'switch_on', 'due_at' => now()->addMinute(), 'status' => 'pending', 'idempotency_key' => 'acceptance-emergency-pending']);
+        $key = (string) Str::uuid();
+        $emergency = $this->withToken('lighting-simulation-admin')->postJson("/api/lighting/channels/{$channel->id}/emergency-off", ['reason' => 'Acceptance emergency', 'idempotency_key' => $key])->assertOk()->json();
+        $repeated = $this->withToken('lighting-simulation-admin')->postJson("/api/lighting/channels/{$channel->id}/emergency-off", ['reason' => 'Acceptance emergency', 'idempotency_key' => $key])->assertOk()->json();
+        $this->assertSame('superseded', $pending->fresh()->status);
+        $this->assertSame('emergency_off', $emergency['command']['command_type']);
+        $this->assertSame($emergency['command']['id'], $repeated['command']['id']);
+        $this->assertSame($invoiceTotal, $reservation->booking->invoice?->fresh()->total_amount);
+        $this->assertSame(1, \App\Models\LightingAlert::where('source_id', $channel->id)->where('alert_type', 'emergency_off')->where('status', 'open')->count());
+    }
 }
