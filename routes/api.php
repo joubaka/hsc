@@ -108,7 +108,9 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('lighting/devices', [LightingController::class, 'storeDevice']);
     Route::put('lighting/devices/{lightingDevice}', [LightingController::class, 'updateDevice']);
     Route::post('lighting/devices/{lightingDevice}/channels', [LightingController::class, 'channel']);
+    Route::put('lighting/devices/{lightingDevice}/channels/{channel}', [LightingController::class, 'updateChannel']);
     Route::post('lighting/devices/{lightingDevice}/test', [LightingController::class, 'test']);
+    Route::put('lighting/devices/{lightingDevice}/simulation', [LightingController::class, 'simulation']);
     Route::post('lighting/zones', [LightingController::class, 'storeZone']);
     Route::put('lighting/zones/{lightingZone}', [LightingController::class, 'updateZone']);
     Route::post('lighting/zones/{lightingZone}/tariffs', [LightingController::class, 'tariff']);
@@ -116,6 +118,9 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('lighting/channels/{channel}/override', [LightingController::class, 'override']);
     Route::post('lighting/channels/{channel}/emergency-off', [LightingController::class, 'emergency']);
     Route::post('lighting/commands/{command}/retry', [LightingController::class, 'retry']);
+    Route::post('lighting/actions/dispatch', [LightingController::class, 'dispatch']);
+    Route::post('lighting/actions/reconcile', [LightingController::class, 'reconcile']);
+    Route::post('lighting/actions/health', [LightingController::class, 'health']);
     Route::get('lighting/reports', [LightingController::class, 'reports']);
 
     Route::prefix('membership-setup')->group(function () {

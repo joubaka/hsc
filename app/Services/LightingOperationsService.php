@@ -67,12 +67,16 @@ class LightingOperationsService
         });
     }
 
-    public function emergencyOff(User $actor, LightingDeviceChannel $channel, string $reason): array
+    public function emergencyOff(User $actor, LightingDeviceChannel $channel, string $reason, string $idempotencyKey): array
     {
-        return DB::transaction(function () use ($channel, $reason) {
+        return DB::transaction(function () use ($channel, $reason, $idempotencyKey) {
             $channel = LightingDeviceChannel::lockForUpdate()->findOrFail($channel->id);
+            $existing = $channel->commands()->where('idempotency_key', "emergency-off:{$idempotencyKey}")->first();
+            if ($existing) {
+                return ['command' => $existing, 'superseded_switch_ons' => 0, 'affected_bookings' => collect()];
+            }
             $superseded = $channel->commands()->where('command_type', 'switch_on')->whereIn('status', ['pending', 'retryable_failure'])->update(['status' => 'superseded']);
-            $command = LightingCommand::create(['command_uuid' => (string) Str::uuid(), 'lighting_device_channel_id' => $channel->id, 'command_type' => 'emergency_off', 'due_at' => now(), 'status' => 'pending', 'idempotency_key' => (string) Str::uuid()]);
+            $command = LightingCommand::create(['command_uuid' => (string) Str::uuid(), 'lighting_device_channel_id' => $channel->id, 'command_type' => 'emergency_off', 'due_at' => now(), 'status' => 'pending', 'idempotency_key' => "emergency-off:{$idempotencyKey}"]);
             LightingAlert::firstOrCreate(['source_type' => $channel::class, 'source_id' => $channel->id, 'alert_type' => 'emergency_off', 'status' => 'open'], ['severity' => 'critical', 'safe_message' => 'Emergency lighting switch-off was activated.']);
             Audit::record('lighting.emergency_off', $command, [], ['channel_id' => $channel->id, 'reason' => $reason, 'superseded_switch_ons' => $superseded]);
 

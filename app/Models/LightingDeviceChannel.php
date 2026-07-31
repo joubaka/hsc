@@ -22,4 +22,9 @@ class LightingDeviceChannel extends Model
     {
         return $this->hasMany(LightingCommand::class);
     }
+
+    public function zones()
+    {
+        return $this->hasMany(LightingZone::class, 'lighting_device_channel_id');
+    }
 }
