@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingCancellationCompensation;
 use App\Models\BookingRefundRequest;
 use App\Models\CreditNote;
+use App\Models\CreditNoteAllocation;
 use App\Models\FinancialTransaction;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -18,6 +19,7 @@ class BookingFinancialCompensationService
     public function __construct(
         private BookingCancellationDecisionService $decisions,
         private DocumentNumberService $numbers,
+        private InvoiceReconciliationService $reconciliation,
     ) {}
 
     public function preview(User $actor, Booking $booking): array
@@ -183,6 +185,22 @@ class BookingFinancialCompensationService
                 'currency' => $invoice->currency, 'amount' => -$owner['amount'], 'occurred_on' => now()->toDateString(),
                 'reference' => $note->credit_note_number, 'reason' => $reason, 'created_by_user_id' => $actor->id,
             ]);
+        }
+        $applicable = min($amount, (int) $invoice->outstanding_amount);
+        if ($applicable > 0) {
+            CreditNoteAllocation::create([
+                'credit_note_id' => $note->id,
+                'invoice_id' => $invoice->id,
+                'amount' => $applicable,
+                'idempotency_key' => "booking-credit-application:{$booking->id}",
+                'applied_by_user_id' => $actor->id,
+                'applied_at' => now(),
+            ]);
+            $note->update([
+                'applied_amount' => $applicable,
+                'status' => $applicable === $amount ? 'applied' : 'partially_applied',
+            ]);
+            $this->reconciliation->reconcile($invoice);
         }
         Audit::record('booking.credit_created', $note, [], [
             'booking_id' => $booking->id, 'invoice_id' => $invoice->id, 'amount' => $amount,

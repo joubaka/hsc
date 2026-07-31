@@ -32,12 +32,16 @@ class BookingCancellationDecisionService
             ? (int) \App\Models\CreditNoteLine::whereIn('invoice_line_id', $lineIds)->whereHas('creditNote', fn ($query) => $query->whereIn('status', ['issued', 'partially_applied', 'applied']))->sum('amount')
             : (int) ($invoice?->creditNotes()->whereIn('status', ['issued', 'partially_applied', 'applied'])->sum('total_amount') ?? 0);
         $refunded = (int) \App\Models\BookingRefundRequest::where('booking_id', $booking->id)->where('status', 'processed')->sum('processed_amount');
-        $eligible = min(intdiv($charged * $percentage, 100), $paid, max(0, $paid - $credited - $refunded));
         $method = $snapshot['refund_method'] ?? 'credit';
+        $policyAmount = intdiv($charged * $percentage, 100);
+        $eligible = $seriesInvoice && $method === 'credit'
+            ? min($policyAmount, max(0, $charged - $credited - $refunded))
+            : min($policyAmount, $paid, max(0, $paid - $credited - $refunded));
         $allowanceMinutes = $booking->allowanceUsage && ! $booking->allowanceUsage->restored_at
             ? (int) $booking->allowanceUsage->minutes : 0;
         [$outcome, $review, $explanation] = match (true) {
             ! $invoice || $charged === 0 => [$allowanceMinutes > 0 ? 'allowance_restored' : 'not_applicable', false, $allowanceMinutes > 0 ? 'Your booking allowance will be restored.' : 'No payment adjustment is required.'],
+            $paid === 0 && $seriesInvoice && $eligible > 0 => ['credited', false, 'The cancelled occurrence will be credited against the shared series invoice.'],
             $paid === 0 => ['invoice_cancelled', false, 'The unpaid booking invoice will be cancelled.'],
             $eligible === 0 => ['no_compensation', false, 'This booking is inside the non-refundable cancellation period.'],
             $method === 'refund' => ['refund_pending', true, 'Your refund entitlement will be recorded for finance processing.'],

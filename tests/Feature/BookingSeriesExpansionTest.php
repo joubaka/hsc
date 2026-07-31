@@ -120,7 +120,7 @@ class BookingSeriesExpansionTest extends TestCase
             'series_type' => 'coach_block', 'starts_on' => now()->addDays(3)->toDateString(), 'start_time' => '10:00',
             'duration_minutes' => 60, 'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'daily',
             'recurrence_interval' => 1, 'occurrence_limit' => 2, 'guest_count' => 0,
-            'billing_strategy' => 'invoice_each_occurrence', 'idempotency_key' => (string) Str::uuid(),
+            'billing_strategy' => 'one_invoice_for_series', 'idempotency_key' => (string) Str::uuid(),
         ];
 
         $series = $this->withToken('series-admin')->postJson('/api/booking-series', $payload)->assertCreated()->json();
@@ -196,6 +196,79 @@ class BookingSeriesExpansionTest extends TestCase
         $this->assertSame('pending_payment', $occurrences[0]->booking->fresh()->status);
         $this->assertSame('pending_payment', $occurrences[2]->booking->fresh()->status);
         $this->assertDatabaseCount('credit_notes', 1);
+    }
+
+    public function test_scoped_cancellation_move_revision_and_operational_recheck_preserve_history(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $admin = User::where('email', 'admin@hsc.local')->firstOrFail();
+        $admin->update(['api_token_hash' => hash('sha256', 'series-mutations')]);
+        $member = Member::where('member_number', 'HSC-00001')->firstOrFail();
+        $origin = Facility::where('code', 'TEN-1')->firstOrFail();
+        $destination = Facility::where('code', 'TEN-2')->firstOrFail();
+        $origin->openingHours()->update(['opens_at' => '00:00:00', 'closes_at' => '23:59:59']);
+        $destination->openingHours()->update(['opens_at' => '00:00:00', 'closes_at' => '23:59:59']);
+        $payload = [
+            'facility_id' => $origin->id, 'sport_code_id' => $origin->sport_code_id, 'member_id' => $member->id,
+            'series_type' => 'coach_block', 'starts_on' => now()->addDays(5)->toDateString(), 'start_time' => '08:00',
+            'duration_minutes' => 60, 'timezone' => 'Africa/Johannesburg', 'recurrence_frequency' => 'daily',
+            'recurrence_interval' => 1, 'occurrence_limit' => 3, 'guest_count' => 0,
+            'billing_strategy' => 'one_invoice_for_series', 'idempotency_key' => (string) Str::uuid(),
+        ];
+        $seriesId = $this->withToken('series-mutations')->postJson('/api/booking-series', $payload)->assertCreated()->json('id');
+        $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/submit")->assertOk();
+        $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/action", ['action' => 'approve'])->assertOk();
+        $series = BookingSeries::with('occurrences.booking')->findOrFail($seriesId);
+        $occurrences = $series->occurrences->sortBy('occurrence_number')->values();
+        $seriesInvoice = $occurrences[0]->booking->invoice;
+        $invoiceTotal = $seriesInvoice->total_amount;
+
+        $moveKey = (string) Str::uuid();
+        $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/move", [
+            'facility_id' => $destination->id, 'scope' => 'selected', 'occurrence_ids' => [$occurrences[0]->id],
+            'reason' => 'Court maintenance', 'idempotency_key' => $moveKey, 'series_version' => 1,
+        ])->assertOk()->assertJsonPath('moved', 1);
+        $this->assertSame($destination->id, $occurrences[0]->booking->fresh()->facility_id);
+        $this->assertSame(1, \App\Models\BookingSeriesMutation::where('idempotency_key', $moveKey)->count());
+
+        $cancelKey = (string) Str::uuid();
+        $cancel = $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/cancel", [
+            'scope' => 'occurrence', 'effective_occurrence_id' => $occurrences[1]->id,
+            'reason' => 'Member unavailable', 'idempotency_key' => $cancelKey, 'series_version' => 1,
+        ])->assertOk()->assertJsonPath('summary.cancelled', 1);
+        $repeat = $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/cancel", [
+            'scope' => 'occurrence', 'effective_occurrence_id' => $occurrences[1]->id,
+            'reason' => 'Member unavailable', 'idempotency_key' => $cancelKey, 'series_version' => 1,
+        ])->assertOk();
+        $this->assertSame($cancel->json(), $repeat->json());
+        $this->assertSame('cancelled', $occurrences[1]->booking->fresh()->status);
+        $this->assertSame('confirmed', $occurrences[2]->fresh()->status);
+        $this->assertSame($invoiceTotal - $occurrences[1]->booking->total_amount, $seriesInvoice->fresh()->outstanding_amount);
+        $this->assertSame($occurrences[1]->booking->total_amount, $seriesInvoice->fresh()->credited_amount);
+        $this->assertDatabaseHas('credit_note_lines', ['invoice_line_id' => $seriesInvoice->lines()->where('source_id', $occurrences[1]->booking_id)->value('id')]);
+
+        $revisionKey = (string) Str::uuid();
+        $revision = $this->withToken('series-mutations')->postJson("/api/booking-series/{$seriesId}/revise-future", [
+            'effective_occurrence_id' => $occurrences[2]->id,
+            'changes' => ['start_time' => '11:00', 'occurrence_limit' => 1],
+            'reason' => 'Permanent time change', 'idempotency_key' => $revisionKey, 'series_version' => 1,
+        ])->assertOk()->assertJsonPath('superseded', 1);
+        $successor = BookingSeries::findOrFail($revision->json('successor_id'));
+        $this->assertSame($seriesId, $successor->predecessor_series_id);
+        $this->assertSame($successor->id, BookingSeries::findOrFail($seriesId)->successor_series_id);
+        $this->assertSame(2, $successor->version);
+        $this->assertCount(1, $successor->occurrences);
+        $this->assertSame('superseded', $occurrences[2]->fresh()->status);
+
+        $successorOccurrence = $successor->occurrences()->firstOrFail();
+        $successor->facility()->update(['active' => false]);
+        $this->artisan('bookings:recheck-series-conflicts')->assertExitCode(0);
+        $this->assertSame('facility_unavailable', $successorOccurrence->fresh()->operational_conflict_reason);
+        $this->artisan('bookings:recheck-series-conflicts')->assertExitCode(0);
+        $this->assertDatabaseCount('audit_logs', \App\Models\AuditLog::count());
+        $successor->facility()->update(['active' => true]);
+        $this->artisan('bookings:recheck-series-conflicts')->assertExitCode(0);
+        $this->assertNull($successorOccurrence->fresh()->operational_conflict_at);
     }
 
     private function definition(array $overrides = []): array

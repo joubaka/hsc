@@ -14,7 +14,7 @@ class BookingSeriesPreviewService
         private BookingRuleEvaluator $evaluator,
     ) {}
 
-    public function preview(User $actor, BookingSeries|array $definition): array
+    public function preview(User $actor, BookingSeries|array $definition, array $ignoreBookingIds = []): array
     {
         $values = $definition instanceof BookingSeries ? $definition->toArray() : $definition;
         $facility = Facility::findOrFail($values['facility_id']);
@@ -27,7 +27,7 @@ class BookingSeriesPreviewService
         $allowanceByPeriod = [];
         $rows = [];
         foreach ($this->expander->expand($values) as $slot) {
-            $result = $this->evaluator->evaluate($actor, $member, $facility, $slot['starts_at'], $slot['ends_at'], (int) ($values['guest_count'] ?? 0));
+            $result = $this->evaluator->evaluate($actor, $member, $facility, $slot['starts_at'], $slot['ends_at'], (int) ($values['guest_count'] ?? 0), null, $ignoreBookingIds);
             $failures = $result['failures'];
             $futureLimit = collect($result['checks'])->firstWhere('code', 'future_quota');
             $dailyLimit = collect($result['checks'])->firstWhere('code', 'daily_quota');
@@ -65,7 +65,7 @@ class BookingSeriesPreviewService
                 'starts_at_utc' => $slot['starts_at']->copy()->utc()->toIso8601String(), 'ends_at_utc' => $slot['ends_at']->copy()->utc()->toIso8601String(),
                 'facility' => $facility->only(['id', 'name', 'code', 'sport_code_id']),
                 'status' => $available ? 'available' : (collect($failures)->contains(fn ($f) => str_contains($f['code'], 'conflict')) ? 'conflicted' : 'rule_blocked'),
-                'eligible' => $available, 'failures' => collect($failures)->map->only(['code', 'member_message', 'override_possible'])->values(),
+                'eligible' => $available, 'failures' => collect($failures)->map(fn ($failure) => collect($failure)->only(['code', 'member_message', 'override_possible'])->all())->values(),
                 'checks' => $result['checks'], 'profile' => $result['profile'], 'price' => $result['price'],
                 'allowance' => $allowance, 'amount_payable' => $result['price']['total_amount'],
                 'cancellation' => $result['cancellation'], 'approval_required' => $requiresApproval,

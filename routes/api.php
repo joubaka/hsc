@@ -90,10 +90,16 @@ Route::middleware('admin.auth')->group(function () {
     Route::post('booking/refund-requests/{refundRequest}/complete', [BookingRefundController::class, 'complete']);
     Route::get('booking-series', [BookingSeriesController::class, 'index']);
     Route::post('booking-series', [BookingSeriesController::class, 'store']);
+    Route::put('booking-series/{bookingSeries}', [BookingSeriesController::class, 'update']);
     Route::get('booking-series/{bookingSeries}', [BookingSeriesController::class, 'show']);
+    Route::get('booking-series/{bookingSeries}/financial-summary', [BookingSeriesController::class, 'financialSummary']);
+    Route::get('booking-series/{bookingSeries}/audit-history', [BookingSeriesController::class, 'auditHistory']);
     Route::get('booking-series/{bookingSeries}/preview', [BookingSeriesController::class, 'preview']);
     Route::post('booking-series/{bookingSeries}/submit', [BookingSeriesController::class, 'submit']);
     Route::post('booking-series/{bookingSeries}/action', [BookingSeriesController::class, 'action']);
+    Route::post('booking-series/{bookingSeries}/cancel', [BookingSeriesController::class, 'cancelScope']);
+    Route::post('booking-series/{bookingSeries}/revise-future', [BookingSeriesController::class, 'reviseFuture']);
+    Route::post('booking-series/{bookingSeries}/move', [BookingSeriesController::class, 'moveScope']);
     Route::post('booking-series/occurrences/{occurrence}/amend', [BookingSeriesController::class, 'amendOccurrence']);
     Route::post('booking-series/occurrences/{occurrence}/move', [BookingSeriesController::class, 'moveOccurrence']);
 
