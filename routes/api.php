@@ -39,10 +39,14 @@ Route::prefix('public/booking')->group(function () {
     Route::get('manage/{token}', [PublicBookingController::class, 'manage'])->middleware('throttle:20,10');
     Route::post('manage/{token}/rotate', [PublicBookingController::class, 'rotate'])->middleware('throttle:20,10');
     Route::post('manage/{token}/cancel', [PublicBookingController::class, 'cancel'])->middleware('throttle:20,10');
+    Route::put('manage/{token}/participants', [PublicBookingController::class, 'participants'])->middleware('throttle:20,10');
+    Route::post('manage/{token}/check-in', [PublicBookingController::class, 'checkIn'])->middleware('throttle:10,10');
 });
 
 Route::middleware('admin.auth')->group(function () {
     Route::get('public-bookings', [PublicBookingController::class, 'admin']);
+    Route::patch('public-bookings/visitors/{visitor:public_reference}/status', [PublicBookingController::class, 'visitorStatus']);
+    Route::patch('public-bookings/settings/{setting}', [PublicBookingController::class, 'setting']);
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('members/meta', [MemberController::class, 'meta']);

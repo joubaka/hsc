@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\BookingHold;
+use App\Models\BookingRefundRequest;
 use App\Models\Facility;
 use App\Models\OperationalNotification;
 use App\Models\PublicBookingCheckout;
@@ -216,13 +217,90 @@ class PublicBookingService
         return ['status' => 'cancelled', 'outcome' => $result->outcome_type, 'refund_status' => $result->refundRequest?->status];
     }
 
+    public function updateParticipants(string $raw, array $participants, Request $request): array
+    {
+        $token = $this->token($raw);
+        $booking = $token->booking;
+        abort_unless(in_array($booking->status, ['pending_payment', 'confirmed'], true), 422, 'Participants can no longer be changed.');
+        abort_if(count($participants) > $this->setting($booking->sport_code_id)->maximum_participants, 422, 'Too many participants were supplied.');
+
+        DB::transaction(function () use ($booking, $participants, $request) {
+            $booking = Booking::lockForUpdate()->findOrFail($booking->id);
+            $before = $booking->participants()->get()->map->only(['display_name', 'age_group', 'role'])->all();
+            $booking->participants()->delete();
+            foreach ($participants as $participant) {
+                abort_if(($participant['age_group'] ?? 'adult') === 'junior' && ! ($participant['guardian_consent'] ?? false), 422, 'Guardian consent is required for junior participants.');
+                $booking->participants()->create([
+                    'participant_type' => 'visitor_guest',
+                    'display_name' => $participant['name'],
+                    'age_group' => $participant['age_group'] ?? 'adult',
+                    'role' => $participant['role'] ?? 'guest',
+                    'guardian_consent' => (bool) ($participant['guardian_consent'] ?? false),
+                ]);
+            }
+            $booking->update(['guest_count' => count($participants)]);
+            Audit::record('public_booking.participants_updated', $booking, ['participants' => $before], ['participant_count' => count($participants)]);
+            $this->event('booking.participants_updated', $booking->publicVisitor, $booking, $request, ['participant_count' => count($participants)]);
+        });
+
+        return $this->managed($raw);
+    }
+
+    public function checkIn(string $raw, Request $request): array
+    {
+        $token = $this->token($raw);
+        $booking = $token->booking;
+        abort_unless($booking->status === 'confirmed' && in_array($booking->payment_status, ['paid', 'not_required'], true), 422, 'This booking cannot be checked in.');
+        $attendance = app(BookingCheckInService::class)->ensure($booking);
+        abort_if(now()->lt($attendance->check_in_opens_at), 422, 'Check-in has not opened.');
+        abort_if(now()->gt($attendance->check_in_closes_at), 422, 'The check-in window has closed.');
+
+        $attendance = app(BookingCheckInService::class)->checkIn($this->systemActor(), $booking, 'public_management');
+        $this->event('booking.checked_in', $booking->publicVisitor, $booking, $request, ['status' => $attendance->status]);
+
+        return $this->managed($raw);
+    }
+
     public function administration(User $user): array
     {
         abort_unless($user->active, 403);
         $codes = $user->isCentralAdministrator() ? null : $user->sportCodes()->pluck('sport_codes.id');
-        $bookings = Booking::with(['facility', 'invoice', 'attendance'])->whereNotNull('public_visitor_id')->when($codes !== null, fn ($q) => $q->whereIn('sport_code_id', $codes))->latest()->limit(100)->get();
+        $scope = fn ($query) => $query->when($codes !== null, fn ($q) => $q->whereIn('sport_code_id', $codes));
+        $bookings = $scope(Booking::with(['facility', 'invoice', 'attendance', 'publicVisitor'])->whereNotNull('public_visitor_id'))->latest()->limit(100)->get();
+        $visitors = PublicVisitor::when($codes !== null, fn ($query) => $query->whereHas('bookings', fn ($booking) => $booking->whereIn('sport_code_id', $codes)))->latest()->limit(100)->get();
+        $failedCheckouts = PublicBookingCheckout::whereHas('hold', fn ($query) => $query->when($codes !== null, fn ($q) => $q->whereHas('facility', fn ($facility) => $facility->whereIn('sport_code_id', $codes))))->where('status', 'failed')->count();
+        $refunds = BookingRefundRequest::whereHas('booking', fn ($query) => $query->whereNotNull('public_visitor_id')->when($codes !== null, fn ($q) => $q->whereIn('sport_code_id', $codes)))->whereNotIn('status', ['completed', 'rejected'])->count();
 
-        return ['bookings' => $bookings->map(fn ($b) => $this->safeBooking($b) + ['visitor_reference' => $b->publicVisitor?->public_reference, 'verification_state' => $b->publicVisitor?->status]), 'report' => ['bookings' => $bookings->count(), 'confirmed' => $bookings->where('status', 'confirmed')->count(), 'cancelled' => $bookings->where('status', 'cancelled')->count(), 'revenue' => $bookings->sum('total_amount')]];
+        return [
+            'bookings' => $bookings->map(fn ($b) => $this->safeBooking($b) + ['visitor_reference' => $b->publicVisitor?->public_reference, 'visitor_name' => $b->publicVisitor?->display_name, 'verification_state' => $b->publicVisitor?->status, 'check_in_state' => $b->attendance?->status]),
+            'visitors' => $visitors->map(fn ($visitor) => ['public_reference' => $visitor->public_reference, 'name' => $visitor->display_name, 'email' => $this->maskEmail($visitor->email), 'mobile' => $this->maskMobile($visitor->mobile), 'status' => $visitor->status, 'email_verified' => (bool) $visitor->email_verified_at, 'mobile_verified' => (bool) $visitor->mobile_verified_at, 'marketing_consent' => $visitor->marketing_consent]),
+            'settings' => PublicBookingSetting::when($codes !== null, fn ($query) => $query->where(fn ($q) => $q->whereNull('sport_code_id')->orWhereIn('sport_code_id', $codes)))->get()->map->only(['id', 'sport_code_id', 'enabled', 'email_verification_required', 'mobile_verification_required', 'payment_required', 'temporary_access_eligible', 'hold_minutes', 'maximum_active_holds', 'maximum_future_bookings', 'maximum_participants']),
+            'report' => ['bookings' => $bookings->count(), 'confirmed' => $bookings->where('status', 'confirmed')->count(), 'cancelled' => $bookings->where('status', 'cancelled')->count(), 'failed_checkout' => $failedCheckouts, 'pending_refunds' => $refunds, 'booked_minutes' => $bookings->sum('duration_minutes'), 'revenue' => $bookings->where('payment_status', 'paid')->sum('total_amount'), 'restricted_visitors' => $visitors->whereIn('status', ['restricted', 'blocked'])->count()],
+            'authorization' => ['can_manage_global_visitors' => $user->isCentralAdministrator(), 'manageable_sport_codes' => $user->isCentralAdministrator() ? 'all' : $user->sportCodes()->whereIn('sport_code_user.role', ['administrator', 'committee'])->pluck('sport_codes.id')],
+        ];
+    }
+
+    public function setVisitorStatus(User $user, PublicVisitor $visitor, string $status, string $reason): array
+    {
+        abort_unless($user->active && $user->isCentralAdministrator(), 403);
+        abort_if($visitor->status === 'converted_to_member', 422, 'Converted visitors cannot be changed here.');
+        $before = $visitor->status;
+        $visitor->update(['status' => $status]);
+        Audit::record('public_visitor.status_changed', $visitor, ['status' => $before], ['status' => $status, 'reason' => $reason]);
+
+        return ['public_reference' => $visitor->public_reference, 'status' => $visitor->status];
+    }
+
+    public function updateSetting(User $user, PublicBookingSetting $setting, array $data): array
+    {
+        abort_unless($user->active, 403);
+        abort_unless($setting->sport_code_id === null ? $user->isCentralAdministrator() : $user->canAccessSportCode($setting->sport_code_id, true), 403);
+        abort_if(($data['dry_run_checkout_enabled'] ?? false) && ! app()->environment(['local', 'testing']), 422, 'Dry-run checkout is unavailable in production.');
+        $before = $setting->only(array_keys($data));
+        $setting->update($data);
+        Audit::record('public_booking.setting_updated', $setting, $before, $setting->only(array_keys($data)));
+
+        return $setting->fresh()->only(['id', 'sport_code_id', 'enabled', 'dry_run_checkout_enabled', 'email_verification_required', 'mobile_verification_required', 'payment_required', 'temporary_access_eligible', 'hold_minutes', 'maximum_active_holds', 'maximum_future_bookings', 'maximum_participants']);
     }
 
     private function setting(?int $sportCodeId): PublicBookingSetting
@@ -238,6 +316,18 @@ class PublicBookingService
     private function fingerprint(Request $request): string
     {
         return hash_hmac('sha256', (string) $request->ip(), config('app.key'));
+    }
+
+    private function maskEmail(string $email): string
+    {
+        [$local, $domain] = array_pad(explode('@', $email, 2), 2, '');
+
+        return mb_substr($local, 0, 1).'***@'.$domain;
+    }
+
+    private function maskMobile(string $mobile): string
+    {
+        return str_repeat('*', max(0, strlen($mobile) - 4)).substr($mobile, -4);
     }
 
     private function holdResponse(BookingHold $hold): array

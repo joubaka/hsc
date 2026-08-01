@@ -2,7 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccessCommand;
+use App\Models\AccessEndpoint;
+use App\Models\AccessZone;
 use App\Models\Booking;
+use App\Models\BookingAccessGrant;
 use App\Models\BookingHold;
 use App\Models\BookingPricingRule;
 use App\Models\BookingSetting;
@@ -96,6 +100,8 @@ class PublicBookingWorkflowTest extends TestCase
         $this->withHeader('X-Visitor-Token', $token)->postJson("/api/public/booking/holds/{$hold['hold_reference']}/checkout", ['outcome' => 'success'])->assertOk();
         $confirmed = $this->withHeader('X-Visitor-Token', $token)->postJson("/api/public/booking/holds/{$hold['hold_reference']}/confirm", ['idempotency_key' => (string) Str::uuid(), 'participants' => []])->json();
         $raw = basename($confirmed['management_path']);
+        $this->putJson('/api/public/booking/manage/'.$raw.'/participants', ['participants' => [['name' => 'Updated Guest', 'age_group' => 'adult']]])->assertOk()->assertJsonPath('participants.0.display_name', 'Updated Guest');
+        $this->putJson('/api/public/booking/manage/'.$raw.'/participants', ['participants' => [['name' => 'Junior Guest', 'age_group' => 'junior', 'guardian_consent' => false]]])->assertUnprocessable();
         $this->getJson('/api/public/booking/manage/'.$raw)->assertOk()->assertJsonMissingPath('token_hash')->assertJsonMissingPath('member');
         $rotated = $this->postJson('/api/public/booking/manage/'.$raw.'/rotate')->assertOk()->json();
         $this->getJson('/api/public/booking/manage/'.$raw)->assertNotFound();
@@ -107,6 +113,31 @@ class PublicBookingWorkflowTest extends TestCase
         $this->assertSame('cancelled', Booking::first()->status);
     }
 
+    public function test_public_management_check_in_uses_canonical_temporary_access_and_is_idempotent(): void
+    {
+        [$token] = $this->verifiedVisitor('checkin@example.test', '0825554040');
+        $start = now()->addDays(2)->setTime(13, 0);
+        $hold = $this->withHeader('X-Visitor-Token', $token)->postJson("/api/public/booking/facilities/{$this->facility->id}/holds", ['starts_at' => $start->toIso8601String(), 'ends_at' => $start->copy()->addHour()->toIso8601String(), 'participants' => [], 'idempotency_key' => (string) Str::uuid(), 'accept_terms' => true, 'accept_privacy' => true, 'accept_facility_rules' => true])->assertCreated()->json();
+        $this->withHeader('X-Visitor-Token', $token)->postJson("/api/public/booking/holds/{$hold['hold_reference']}/checkout", ['outcome' => 'success'])->assertOk();
+        $confirmed = $this->withHeader('X-Visitor-Token', $token)->postJson("/api/public/booking/holds/{$hold['hold_reference']}/confirm", ['idempotency_key' => (string) Str::uuid(), 'participants' => []])->assertCreated()->json();
+        $raw = basename($confirmed['management_path']);
+        $booking = Booking::firstOrFail();
+        $booking->update(['starts_at' => now()->addMinutes(5), 'ends_at' => now()->addMinutes(65)]);
+        $booking->attendance()->delete();
+
+        $zone = AccessZone::create(['venue_id' => $this->facility->venue_id, 'sport_code_id' => $this->facility->sport_code_id, 'code' => 'PUBLIC-TEST-ENTRY', 'name' => 'Public test entrance', 'active' => true, 'provider_mode' => 'dry_run', 'requires_booking' => true, 'allows_permanent_member_access' => false, 'allows_temporary_booking_access' => true]);
+        $zone->facilities()->attach($this->facility->id);
+        AccessEndpoint::create(['access_zone_id' => $zone->id, 'code' => 'PUBLIC-TEST-ENDPOINT', 'name' => 'Public dry-run endpoint', 'provider' => 'dry_run', 'enabled' => true, 'dry_run' => true]);
+
+        $first = $this->postJson('/api/public/booking/manage/'.$raw.'/check-in')->assertOk();
+        $second = $this->postJson('/api/public/booking/manage/'.$raw.'/check-in')->assertOk();
+        $first->assertJsonPath('check_in.status', 'checked_in');
+        $second->assertJsonPath('check_in.status', 'checked_in');
+        $this->assertSame(1, BookingAccessGrant::where('booking_id', $booking->id)->count());
+        $this->assertSame(1, AccessCommand::whereHas('grant', fn ($query) => $query->where('booking_id', $booking->id))->count());
+        $this->assertDatabaseMissing('booking_access_grants', ['member_id' => 1]);
+    }
+
     public function test_public_availability_exposes_no_booking_or_member_identity(): void
     {
         $from = now()->addDay()->startOfDay();
@@ -116,6 +147,30 @@ class PublicBookingWorkflowTest extends TestCase
         $this->assertStringNotContainsString('member_id', $json);
         $this->assertStringNotContainsString('email', $json);
         $this->assertStringNotContainsString('booking_reference', $json);
+    }
+
+    public function test_public_booking_administration_is_scoped_masked_and_write_authorized(): void
+    {
+        $identity = $this->postJson('/api/public/booking/identity', ['first_name' => 'Admin', 'last_name' => 'Visitor', 'email' => 'admin-visitor@example.test', 'mobile' => '0825555050'])->assertOk()->json();
+        $visitor = PublicVisitor::where('public_reference', $identity['visitor_reference'])->firstOrFail();
+        $central = User::factory()->create(['role' => 'hsc_admin', 'active' => true, 'api_token_hash' => hash('sha256', 'public-central')]);
+        $sportAdmin = User::factory()->create(['role' => 'sport_admin', 'active' => true, 'api_token_hash' => hash('sha256', 'public-sport')]);
+        $viewer = User::factory()->create(['role' => 'sport_admin', 'active' => true, 'api_token_hash' => hash('sha256', 'public-viewer')]);
+        $disabled = User::factory()->create(['role' => 'hsc_admin', 'active' => false, 'api_token_hash' => hash('sha256', 'public-disabled')]);
+        $sportAdmin->sportCodes()->attach($this->facility->sport_code_id, ['role' => 'administrator']);
+        $viewer->sportCodes()->attach($this->facility->sport_code_id, ['role' => 'viewer']);
+        $codeSetting = PublicBookingSetting::create(['sport_code_id' => $this->facility->sport_code_id, 'enabled' => true, 'dry_run_checkout_enabled' => true]);
+        $globalSetting = PublicBookingSetting::whereNull('sport_code_id')->firstOrFail();
+
+        $this->withToken('public-central')->patchJson("/api/public-bookings/visitors/{$visitor->public_reference}/status", ['status' => 'restricted', 'reason' => 'Repeated policy breach'])->assertOk()->assertJson(['status' => 'restricted']);
+        $this->withToken('public-sport')->patchJson("/api/public-bookings/visitors/{$visitor->public_reference}/status", ['status' => 'verified', 'reason' => 'Not globally authorized'])->assertForbidden();
+        $this->withToken('public-sport')->patchJson("/api/public-bookings/settings/{$codeSetting->id}", ['maximum_active_holds' => 3])->assertOk()->assertJson(['maximum_active_holds' => 3]);
+        $this->withToken('public-sport')->patchJson("/api/public-bookings/settings/{$globalSetting->id}", ['enabled' => false])->assertForbidden();
+        $this->withToken('public-viewer')->patchJson("/api/public-bookings/settings/{$codeSetting->id}", ['enabled' => false])->assertForbidden();
+        $dashboard = $this->withToken('public-central')->getJson('/api/public-bookings')->assertOk()->json();
+        $this->assertStringNotContainsString('admin-visitor@example.test', json_encode($dashboard));
+        $this->assertStringNotContainsString('0825555050', json_encode($dashboard));
+        $this->withToken('public-disabled')->getJson('/api/public-bookings')->assertUnauthorized();
     }
 
     private function verifiedVisitor(string $email = 'visitor@example.test', string $mobile = '0825550000'): array
