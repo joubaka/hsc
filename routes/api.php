@@ -21,14 +21,28 @@ use App\Http\Controllers\Api\MembershipPeriodController;
 use App\Http\Controllers\Api\MembershipSetupController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PublicAvailabilityController;
+use App\Http\Controllers\Api\PublicBookingController;
 use App\Http\Controllers\Api\RenewalController;
 use App\Http\Controllers\ReceiptPrintController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::get('public/availability', PublicAvailabilityController::class)->middleware('throttle:60,1');
+Route::prefix('public/booking')->group(function () {
+    Route::post('identity', [PublicBookingController::class, 'identity'])->middleware('throttle:10,1');
+    Route::post('verification/request', [PublicBookingController::class, 'requestVerification'])->middleware('throttle:10,10');
+    Route::post('verification/verify', [PublicBookingController::class, 'verify'])->middleware('throttle:20,10');
+    Route::post('facilities/{facility}/preview', [PublicBookingController::class, 'preview'])->middleware('throttle:30,1');
+    Route::post('facilities/{facility}/holds', [PublicBookingController::class, 'hold'])->middleware('throttle:10,10');
+    Route::post('holds/{hold:hold_reference}/checkout', [PublicBookingController::class, 'pay'])->middleware('throttle:10,10');
+    Route::post('holds/{hold:hold_reference}/confirm', [PublicBookingController::class, 'confirm'])->middleware('throttle:10,10');
+    Route::get('manage/{token}', [PublicBookingController::class, 'manage'])->middleware('throttle:20,10');
+    Route::post('manage/{token}/rotate', [PublicBookingController::class, 'rotate'])->middleware('throttle:20,10');
+    Route::post('manage/{token}/cancel', [PublicBookingController::class, 'cancel'])->middleware('throttle:20,10');
+});
 
 Route::middleware('admin.auth')->group(function () {
+    Route::get('public-bookings', [PublicBookingController::class, 'admin']);
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('members/meta', [MemberController::class, 'meta']);

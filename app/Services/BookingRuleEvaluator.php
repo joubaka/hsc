@@ -18,10 +18,10 @@ class BookingRuleEvaluator
         private LightingQuoteService $lighting,
     ) {}
 
-    public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null, int|array|null $ignoreBookingId = null, bool $lightingRequested = false): array
+    public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null, int|array|null $ignoreBookingId = null, bool $lightingRequested = false, ?array $profileOverride = null): array
     {
         $facility->loadMissing(['venue', 'sportCode', 'openingHours', 'group']);
-        $profile = $this->profiles->resolve($user, $member, $facility, $start);
+        $profile = $profileOverride ?? $this->profiles->resolve($user, $member, $facility, $start);
         $policy = $this->policies->resolve($facility, $profile, $start);
         $rules = $policy['values'];
         $failures = $profile['failures'];

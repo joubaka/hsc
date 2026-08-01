@@ -41,6 +41,11 @@ class Booking extends Model
         return $this->belongsTo(Member::class);
     }
 
+    public function publicVisitor()
+    {
+        return $this->belongsTo(PublicVisitor::class);
+    }
+
     public function invoice()
     {
         return $this->belongsTo(Invoice::class);

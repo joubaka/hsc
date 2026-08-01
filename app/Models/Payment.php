@@ -18,6 +18,11 @@ class Payment extends Model
         return $this->belongsTo(Member::class);
     }
 
+    public function publicVisitor()
+    {
+        return $this->belongsTo(PublicVisitor::class);
+    }
+
     public function allocations()
     {
         return $this->hasMany(PaymentAllocation::class);

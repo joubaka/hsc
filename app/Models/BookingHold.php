@@ -12,7 +12,7 @@ class BookingHold extends Model
     {
         return [
             'starts_at' => 'datetime', 'ends_at' => 'datetime', 'expires_at' => 'datetime',
-            'rule_snapshot' => 'array', 'price_snapshot' => 'array', 'allowance_snapshot' => 'array', 'cancellation_snapshot' => 'array', 'lighting_snapshot' => 'array',
+            'rule_snapshot' => 'array', 'price_snapshot' => 'array', 'allowance_snapshot' => 'array', 'cancellation_snapshot' => 'array', 'lighting_snapshot' => 'array', 'public_consent_snapshot' => 'array',
         ];
     }
 
@@ -24,5 +24,10 @@ class BookingHold extends Model
     public function member()
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function publicVisitor()
+    {
+        return $this->belongsTo(PublicVisitor::class);
     }
 }

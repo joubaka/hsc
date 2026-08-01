@@ -18,6 +18,11 @@ class Invoice extends Model
         return $this->belongsTo(Member::class);
     }
 
+    public function publicVisitor()
+    {
+        return $this->belongsTo(PublicVisitor::class);
+    }
+
     public function period()
     {
         return $this->belongsTo(MembershipPeriod::class, 'membership_period_id');

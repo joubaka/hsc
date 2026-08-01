@@ -18,7 +18,7 @@ class BookingBillingService
             return $existing;
         }
         $invoice = Invoice::create([
-            'member_id' => $booking->member_id, 'currency' => $booking->currency, 'status' => 'draft',
+            'member_id' => $booking->member_id, 'public_visitor_id' => $booking->public_visitor_id, 'currency' => $booking->currency, 'status' => 'draft',
             'subtotal_amount' => $booking->gross_amount, 'discount_amount' => $booking->allowance_amount + $booking->discount_amount,
             'total_amount' => $booking->total_amount, 'outstanding_amount' => $booking->total_amount,
             'source_type' => Booking::class, 'source_id' => $booking->id, 'billing_event' => 'facility_booking',

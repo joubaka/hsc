@@ -24,6 +24,7 @@ use App\Models\Member;
 use App\Models\MembershipApplication;
 use App\Models\MembershipPeriod;
 use App\Models\Payment;
+use App\Models\PublicBookingSetting;
 use App\Models\SportCode;
 use App\Models\SportMembership;
 use App\Models\User;
@@ -260,6 +261,11 @@ class DatabaseSeeder extends Seeder
         }
 
         BookingSetting::firstOrCreate([], ['timezone' => 'Africa/Johannesburg', 'currency' => 'ZAR', 'hold_minutes' => 10, 'default_hourly_rate_cents' => 12000]);
+        PublicBookingSetting::updateOrCreate(['sport_code_id' => null], [
+            'enabled' => app()->environment(['local', 'testing']), 'dry_run_checkout_enabled' => app()->environment(['local', 'testing']),
+            'email_verification_required' => true, 'mobile_verification_required' => false, 'payment_required' => true,
+            'hold_minutes' => 10, 'maximum_active_holds' => 2, 'maximum_future_bookings' => 3, 'maximum_participants' => 4,
+        ]);
         BookingCheckInSetting::updateOrCreate(['sport_code_id' => null], [
             'enabled' => true, 'opens_minutes_before' => 30, 'closes_minutes_after' => 10,
             'allow_member_self_check_in' => true, 'allow_qr' => true, 'allow_short_code' => true,
