@@ -33,9 +33,11 @@ declare module 'vue-router/auto-routes' {
     'financial-settings': RouteRecordInfo<'financial-settings', '/financial-settings', Record<never, never>, Record<never, never>>,
     'lighting': RouteRecordInfo<'lighting', '/lighting', Record<never, never>, Record<never, never>>,
     'login': RouteRecordInfo<'login', '/login', Record<never, never>, Record<never, never>>,
+    'manage-booking-token': RouteRecordInfo<'manage-booking-token', '/manage-booking/:token', { token: ParamValue<true> }, { token: ParamValue<false> }>,
     'membership-applications': RouteRecordInfo<'membership-applications', '/membership-applications', Record<never, never>, Record<never, never>>,
     'membership-periods': RouteRecordInfo<'membership-periods', '/membership-periods', Record<never, never>, Record<never, never>>,
     'membership-setup': RouteRecordInfo<'membership-setup', '/membership-setup', Record<never, never>, Record<never, never>>,
+    'public-bookings': RouteRecordInfo<'public-bookings', '/public-bookings', Record<never, never>, Record<never, never>>,
     'renewals': RouteRecordInfo<'renewals', '/renewals', Record<never, never>, Record<never, never>>,
     'second-page': RouteRecordInfo<'second-page', '/second-page', Record<never, never>, Record<never, never>>,
   }

@@ -1,31 +1,25 @@
 <script setup>
 import { $api } from '@/utils/api'
 definePage({ meta: { layout: 'blank', public: true } })
-const date = ref(new Date().toISOString().slice(0, 10))
-const facilities = ref([])
-const loading = ref(false)
-const error = ref('')
-async function load() {
-  loading.value = true; error.value = ''
-  try {
-    const from = new Date(`${date.value}T00:00:00`)
-    const to = new Date(from); to.setDate(to.getDate() + 7)
-    facilities.value = (await $api(`/public/availability?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`)).facilities
-  } catch (exception) { error.value = exception?.data?.message || 'Availability could not be loaded.' }
-  finally { loading.value = false }
-}
+const step=ref(1), facilities=ref([]), selected=ref(null), loading=ref(false), error=ref(''), notice=ref(''), session=ref(sessionStorage.getItem('hscVisitorToken')||'')
+const form=reactive({first_name:'',last_name:'',email:'',mobile:'',marketing_consent:false}), code=ref(''), developmentCode=ref('')
+const booking=reactive({date:new Date(Date.now()+86400000).toISOString().slice(0,10),time:'10:00',duration:60,lighting_requested:false,participants:[]})
+const hold=ref(null), confirmed=ref(null), terms=ref(false)
+const headers=()=>session.value?{'X-Visitor-Token':session.value}:{}
+async function load(){loading.value=true;error.value='';try{const from=new Date(`${booking.date}T00:00:00`),to=new Date(from);to.setDate(to.getDate()+7);facilities.value=(await $api(`/public/availability?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`)).facilities}catch(e){error.value=e?.data?.message||'Availability could not be loaded.'}finally{loading.value=false}}
+async function identify(){try{const r=await $api('/public/booking/identity',{method:'POST',body:form});session.value=r.session_token;sessionStorage.setItem('hscVisitorToken',session.value);const v=await $api('/public/booking/verification/request',{method:'POST',headers:headers(),body:{channel:'email',idempotency_key:crypto.randomUUID()}});developmentCode.value=v.development_code||'';step.value=3}catch(e){error.value=e?.data?.message||'Identity verification could not start.'}}
+async function verify(){try{await $api('/public/booking/verification/verify',{method:'POST',headers:headers(),body:{channel:'email',code:code.value}});step.value=4}catch(e){error.value=e?.data?.message||'The verification code is invalid or expired.'}}
+const slot=()=>{const starts_at=`${booking.date}T${booking.time}:00+02:00`;const ends_at=new Date(new Date(starts_at).getTime()+booking.duration*60000).toISOString();return {starts_at,ends_at,lighting_requested:booking.lighting_requested,participants:booking.participants}}
+async function createHold(){try{hold.value=await $api(`/public/booking/facilities/${selected.value.id}/holds`,{method:'POST',headers:headers(),body:{...slot(),idempotency_key:crypto.randomUUID(),accept_terms:terms.value,accept_privacy:terms.value,accept_facility_rules:terms.value}});step.value=5}catch(e){error.value=e?.data?.message||'The hold could not be created.'}}
+async function checkout(outcome='success'){try{const paid=await $api(`/public/booking/holds/${hold.value.hold_reference}/checkout`,{method:'POST',headers:headers(),body:{outcome}});if(paid.status==='failed'){notice.value='Test payment failed safely. No booking was created.';return}confirmed.value=await $api(`/public/booking/holds/${hold.value.hold_reference}/confirm`,{method:'POST',headers:headers(),body:{idempotency_key:crypto.randomUUID(),participants:booking.participants}});step.value=6}catch(e){error.value=e?.data?.message||'Checkout could not be completed.'}}
 onMounted(load)
 </script>
-<template>
-  <div class="public-booking">
-    <header><div><h1>Hermanus Sports Club</h1><p>Live court availability</p></div><VBtn to="/login" variant="tonal">Member sign in</VBtn></header>
-    <main><div class="d-flex flex-wrap gap-3 align-center mb-6"><VTextField v-model="date" type="date" label="Week starting" hide-details style="max-width:230px" /><VBtn :loading="loading" @click="load">View availability</VBtn></div>
-      <VAlert v-if="error" type="error" class="mb-4">{{ error }}</VAlert>
-      <VAlert type="info" variant="tonal" class="mb-5">Availability is privacy-safe. Sign in with your linked HSC member account to hold or book a court.</VAlert>
-      <div class="facility-grid"><VCard v-for="facility in facilities" :key="facility.id"><VCardTitle>{{ facility.name }}</VCardTitle><VCardSubtitle>{{ facility.venue?.name }} · {{ facility.facility_type.replaceAll('_',' ') }}</VCardSubtitle><VCardText><p>{{ facility.description }}</p><div class="d-flex flex-wrap gap-2 my-3"><VChip v-for="tag in facility.tags" :key="tag.id" size="small">{{ tag.name }}</VChip></div><p class="text-medium-emphasis">{{ facility.blocked_slots.length }} unavailable slot(s) in this week</p></VCardText></VCard></div>
-    </main>
-  </div>
-</template>
-<style scoped>
-.public-booking{min-height:100vh;background:#f5f4f8;color:#2f2b3d}.public-booking header{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1.2rem clamp(1rem,5vw,5rem);background:white}.public-booking main{max-width:1200px;margin:auto;padding:2rem clamp(1rem,4vw,3rem)}.facility-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
-</style>
+<template><div class="public-booking"><header><div><h1>Hermanus Sports Club</h1><p>Visitor court booking</p></div><VBtn to="/login" variant="tonal">Member sign in</VBtn></header><main><VAlert v-if="error" type="error" closable class="mb-4" @click:close="error=''">{{error}}</VAlert><VAlert v-if="notice" type="info" class="mb-4">{{notice}}</VAlert>
+<VStepper v-model="step" :items="['Court','Your details','Verify','Review','Payment','Confirmed']" hide-actions>
+<template #item.1><div class="toolbar"><VTextField v-model="booking.date" type="date" label="Date"/><VBtn :loading="loading" @click="load">Refresh</VBtn></div><div class="facility-grid"><VCard v-for="f in facilities" :key="f.id" :class="{selected:selected?.id===f.id}" @click="selected=f"><VCardTitle>{{f.name}}</VCardTitle><VCardSubtitle>{{f.venue?.name}} · {{f.facility_type.replaceAll('_',' ')}}</VCardSubtitle><VCardText>{{f.description}}<p>{{f.blocked_slots.length}} unavailable slot(s)</p></VCardText></VCard></div><VBtn :disabled="!selected" class="mt-4" @click="step=2">Continue</VBtn></template>
+<template #item.2><VRow><VCol cols="12" md="6"><VTextField v-model="form.first_name" label="First name"/></VCol><VCol cols="12" md="6"><VTextField v-model="form.last_name" label="Last name"/></VCol><VCol cols="12" md="6"><VTextField v-model="form.email" label="Email" type="email"/></VCol><VCol cols="12" md="6"><VTextField v-model="form.mobile" label="Mobile"/></VCol></VRow><VCheckbox v-model="form.marketing_consent" label="Optional marketing updates"/><VBtn @click="identify">Send verification code</VBtn></template>
+<template #item.3><VAlert type="info" variant="tonal" class="mb-4">Enter the code sent to your email.<span v-if="developmentCode"> Local test code: {{developmentCode}}</span></VAlert><VTextField v-model="code" label="Verification code"/><VBtn @click="verify">Verify</VBtn><VBtn variant="text" @click="identify">Send a new code</VBtn></template>
+<template #item.4><VRow><VCol cols="12" md="4"><VTextField v-model="booking.time" type="time" label="Start time"/></VCol><VCol cols="12" md="4"><VSelect v-model="booking.duration" :items="[30,60,90,120]" label="Minutes"/></VCol><VCol cols="12" md="4"><VSwitch v-model="booking.lighting_requested" label="Request lighting"/></VCol></VRow><VCheckbox v-model="terms" label="I accept the booking terms, cancellation policy, privacy notice and facility rules"/><VBtn :disabled="!terms" @click="createHold">Review server price</VBtn></template>
+<template #item.5><VCard v-if="hold"><VCardTitle>Secure checkout</VCardTitle><VCardText><p>Total: {{hold.price.currency}} {{(hold.price.total_amount/100).toFixed(2)}}</p><p>Hold expires {{new Date(hold.expires_at).toLocaleString()}}</p><VAlert type="warning" variant="tonal">Development dry-run checkout. No bank is contacted.</VAlert></VCardText><VCardActions><VBtn @click="checkout('success')">Complete test payment</VBtn><VBtn variant="outlined" @click="checkout('failure')">Test failed payment</VBtn></VCardActions></VCard></template>
+<template #item.6><VAlert type="success" title="Booking confirmed"><p>{{confirmed?.booking?.booking_reference}}</p><p>Your secure management link is available for this session.</p><VBtn v-if="confirmed?.management_path" :to="confirmed.management_path">Manage booking</VBtn></VAlert></template></VStepper></main></div></template>
+<style scoped>.public-booking{min-height:100vh;background:#f5f4f8;color:#2f2b3d}.public-booking header{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1.2rem clamp(1rem,5vw,5rem);background:white}.public-booking main{max-width:1200px;margin:auto;padding:2rem clamp(1rem,4vw,3rem)}.facility-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem}.facility-grid .selected{outline:3px solid #2e7d32}.toolbar{display:flex;gap:1rem;align-items:center;max-width:450px}@media(max-width:600px){.public-booking header{align-items:flex-start;flex-direction:column}.public-booking main{padding:1rem}.toolbar{align-items:stretch;flex-direction:column}.facility-grid{grid-template-columns:1fr}}</style>

@@ -79,4 +79,9 @@ export default [
     to: { name: 'check-in-operations' },
     icon: { icon: 'tabler-door-enter' },
   },
+  {
+    title: 'Public bookings',
+    to: { name: 'public-bookings' },
+    icon: { icon: 'tabler-world' },
+  },
 ]

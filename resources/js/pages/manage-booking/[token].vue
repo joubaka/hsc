@@ -1,0 +1,11 @@
+<script setup>
+import { $api } from '@/utils/api'
+definePage({meta:{layout:'blank',public:true}})
+const route=useRoute(), router=useRouter(), data=ref(null),error=ref(''),reason=ref(''),cancelled=ref(false)
+async function load(){try{data.value=await $api(`/public/booking/manage/${route.params.token}`)}catch(e){error.value=e?.data?.message||'This booking link is unavailable.'}}
+async function rotate(){try{const r=await $api(`/public/booking/manage/${route.params.token}/rotate`,{method:'POST'});await router.replace(r.management_path)}catch(e){error.value=e?.data?.message||'The link could not be rotated.'}}
+async function cancel(){try{data.value=await $api(`/public/booking/manage/${route.params.token}/cancel`,{method:'POST',body:{reason:reason.value}});cancelled.value=true}catch(e){error.value=e?.data?.message||'The booking could not be cancelled.'}}
+onMounted(load)
+</script>
+<template><div class="manage"><main><h1>Manage visitor booking</h1><VAlert v-if="error" type="error">{{error}}</VAlert><VAlert v-else-if="cancelled" type="success" title="Booking cancelled">Outcome: {{data.outcome}} · Refund: {{data.refund_status||'not applicable'}}</VAlert><VCard v-else-if="data"><VCardTitle>{{data.facility?.name}}</VCardTitle><VCardText><p>{{new Date(data.starts_at).toLocaleString()}} – {{new Date(data.ends_at).toLocaleString()}}</p><p>Status: {{data.status}} · Payment: {{data.payment_status}}</p><p>Total: {{data.currency}} {{(data.amount/100).toFixed(2)}} · Receipt: {{data.receipt_number||'pending'}}</p><p>Lighting: {{data.lighting_status||'not required'}} · Check-in: {{data.check_in?.status||'not available'}}</p><p>Cancellation deadline: {{data.cancellation_deadline?new Date(data.cancellation_deadline).toLocaleString():'See policy'}}</p><VTextField v-model="reason" label="Cancellation reason"/><VBtn color="error" :disabled="reason.length<5" @click="cancel">Cancel booking</VBtn><VBtn variant="outlined" class="ms-2" @click="rotate">Rotate secure link</VBtn></VCardText></VCard></main></div></template>
+<style scoped>.manage{min-height:100vh;background:#f5f4f8;padding:clamp(1rem,5vw,4rem)}main{max-width:760px;margin:auto}h1{margin-bottom:1.5rem}@media(max-width:600px){.manage{padding:1rem}.v-btn{width:100%;margin:.4rem 0!important}}</style>
