@@ -11,6 +11,7 @@ use App\Models\BookingHold;
 use App\Models\BookingPricingRule;
 use App\Models\BookingSetting;
 use App\Models\Facility;
+use App\Models\PublicBookingManagementToken;
 use App\Models\PublicBookingSetting;
 use App\Models\PublicVisitor;
 use App\Models\SportCode;
@@ -136,6 +137,21 @@ class PublicBookingWorkflowTest extends TestCase
         $this->assertSame(1, BookingAccessGrant::where('booking_id', $booking->id)->count());
         $this->assertSame(1, AccessCommand::whereHas('grant', fn ($query) => $query->where('booking_id', $booking->id))->count());
         $this->assertDatabaseMissing('booking_access_grants', ['member_id' => 1]);
+
+        PublicBookingSetting::whereNull('sport_code_id')->update(['temporary_access_eligible' => false]);
+        $withoutAccess = $booking->replicate();
+        $withoutAccess->booking_reference = 'BKG-PUBLIC-NO-ACCESS';
+        $withoutAccess->booking_hold_id = null;
+        $withoutAccess->confirmation_key = (string) Str::uuid();
+        $withoutAccess->starts_at = now()->addMinutes(10);
+        $withoutAccess->ends_at = now()->addMinutes(70);
+        $withoutAccess->save();
+        app(\App\Services\BookingCheckInService::class)->ensure($withoutAccess);
+        $rawWithoutAccess = Str::random(64);
+        PublicBookingManagementToken::create(['booking_id' => $withoutAccess->id, 'public_visitor_id' => $withoutAccess->public_visitor_id, 'token_hash' => hash('sha256', $rawWithoutAccess), 'token_prefix' => substr($rawWithoutAccess, 0, 8), 'purpose' => 'manage', 'issued_at' => now(), 'expires_at' => now()->addDay(), 'idempotency_key' => (string) Str::uuid()]);
+        $this->postJson('/api/public/booking/manage/'.$rawWithoutAccess.'/check-in')->assertOk()->assertJsonPath('check_in.status', 'checked_in');
+        $this->assertSame(0, BookingAccessGrant::where('booking_id', $withoutAccess->id)->count());
+        $this->assertSame(0, AccessCommand::whereHas('grant', fn ($query) => $query->where('booking_id', $withoutAccess->id))->count());
     }
 
     public function test_public_availability_exposes_no_booking_or_member_identity(): void

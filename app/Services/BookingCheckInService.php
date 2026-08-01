@@ -66,8 +66,9 @@ class BookingCheckInService
         string $method = 'member',
         ?string $token = null,
         ?string $reason = null,
+        bool $allowTemporaryAccess = true,
     ): BookingAttendance {
-        return DB::transaction(function () use ($actor, $booking, $method, $token, $reason) {
+        return DB::transaction(function () use ($actor, $booking, $method, $token, $reason, $allowTemporaryAccess) {
             $booking = Booking::lockForUpdate()->findOrFail($booking->id);
             $admin = app(BookingAccessService::class)->canManage($actor, $booking->facility);
 
@@ -127,7 +128,9 @@ class BookingCheckInService
                 ]);
             }
 
-            app(BookingAccessGrantService::class)->ensure($booking, $policy);
+            if ($allowTemporaryAccess) {
+                app(BookingAccessGrantService::class)->ensure($booking, $policy);
+            }
 
             Audit::record('booking.checked_in', $attendance, [], [
                 'booking_id' => $booking->id,

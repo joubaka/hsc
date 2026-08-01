@@ -255,7 +255,12 @@ class PublicBookingService
         abort_if(now()->lt($attendance->check_in_opens_at), 422, 'Check-in has not opened.');
         abort_if(now()->gt($attendance->check_in_closes_at), 422, 'The check-in window has closed.');
 
-        $attendance = app(BookingCheckInService::class)->checkIn($this->systemActor(), $booking, 'public_management');
+        $attendance = app(BookingCheckInService::class)->checkIn(
+            $this->systemActor(),
+            $booking,
+            'public_management',
+            allowTemporaryAccess: $this->setting($booking->sport_code_id)->temporary_access_eligible,
+        );
         $this->event('booking.checked_in', $booking->publicVisitor, $booking, $request, ['status' => $attendance->status]);
 
         return $this->managed($raw);
