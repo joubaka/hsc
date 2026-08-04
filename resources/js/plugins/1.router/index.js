@@ -27,8 +27,15 @@ const router = createRouter({
 
 router.beforeEach(to => {
   const hasToken = Boolean(localStorage.getItem('hsc_admin_token'))
+  const hasMemberToken = Boolean(localStorage.getItem('hsc_member_token'))
 
-  if (!to.meta.public && !hasToken)
+  if (to.meta.memberOnly && !hasMemberToken)
+    return { name: 'member-login' }
+
+  if (to.meta.memberGuest && hasMemberToken)
+    return { name: 'member-portal' }
+
+  if (!to.meta.public && !to.meta.memberOnly && !hasToken)
     return { name: 'login', query: { redirect: to.fullPath } }
 
   if (to.name === 'login' && hasToken)

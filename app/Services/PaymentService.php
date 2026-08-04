@@ -63,6 +63,7 @@ class PaymentService
             ]);
             Audit::record('payment.confirmed', $payment, ['status' => 'pending'], ['status' => 'confirmed', 'amount' => $payment->amount, 'currency' => $payment->currency]);
             Audit::record('receipt.generated', $payment->receipt, [], ['receipt_number' => $receiptNumber, 'payment_id' => $payment->id, 'amount' => $payment->amount]);
+            app(CommunicationService::class)->paymentConfirmed($payment->id);
 
             return $payment->fresh()->load('receipt');
         });

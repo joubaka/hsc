@@ -17,3 +17,4 @@ Schedule::command('bookings:process-no-shows')->everyFiveMinutes()->withoutOverl
 Schedule::command('access:dispatch-due')->everyMinute()->withoutOverlapping();
 Schedule::command('access:reconcile')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('access:health-check')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('communications:dispatch')->everyFifteenMinutes()->withoutOverlapping();

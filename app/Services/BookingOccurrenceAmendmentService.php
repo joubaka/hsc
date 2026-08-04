@@ -46,6 +46,17 @@ class BookingOccurrenceAmendmentService
             $lightingRequested = (bool) ($changes['lighting_requested'] ?? ($booking->lighting_snapshot['applies'] ?? false));
             $result = $this->evaluator->evaluate($actor, $member, $facility, $start, $end, (int) ($changes['guest_count'] ?? $booking->guest_count), null, $booking->id, $lightingRequested);
             abort_unless($result['eligible'], 422, $result['failures'][0]['member_message'] ?? 'The replacement slot is unavailable.');
+            // A centrally managed, one-invoice series is a paid administrative product. Moving one
+            // occurrence must retain that pricing model instead of applying the free ad-hoc member rate.
+            $series = $occurrence->series;
+            if ($series?->billing_strategy === 'one_invoice_for_series' && app(BookingAccessService::class)->canManage($actor, $facility)) {
+                $result['allowance'] = ['policy_id' => null, 'minutes' => 0, 'value_cents' => 0];
+                $result['price']['allowance'] = $result['allowance'];
+                $result['price']['allowance_amount'] = 0;
+                $result['price']['member_court_waiver_amount'] = 0;
+                $result['price']['total_amount'] = $result['price']['gross_amount'];
+                $result['price']['court_amount'] = $result['price']['gross_amount'] - (int) ($result['price']['lighting_amount'] ?? 0);
+            }
             $old = $booking->only(['facility_id', 'starts_at', 'ends_at', 'duration_minutes', 'total_amount', 'allowance_amount']);
             app(BookingCheckInService::class)->revokeTokens($booking);
             app(BookingAccessGrantService::class)->revoke($booking, 'booking_amended');

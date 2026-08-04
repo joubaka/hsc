@@ -134,6 +134,7 @@ class InvoiceService
                 ]);
             }
             Audit::record('invoice.issued', $invoice, ['status' => 'draft'], ['status' => 'issued', 'invoice_number' => $number, 'amount' => $invoice->total_amount]);
+            app(CommunicationService::class)->invoiceIssued($invoice->id);
 
             return $this->reconciliation->reconcile($invoice)->load('lines');
         });

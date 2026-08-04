@@ -78,8 +78,11 @@ class LightingReservationService
             'scheduled_off_at' => $snapshot['scheduled_off_at'],
             'billable_minutes' => $snapshot['billable_minutes'],
             'amount' => $snapshot['amount'],
+            'currency' => $snapshot['currency'],
             'pricing_snapshot' => collect($snapshot)->only(['tariff_id', 'tariff_version', 'tariff_name', 'unit_amount', 'pricing_method', 'billable_minutes', 'amount', 'financial_owner_type'])->all(),
             'zone_snapshot' => collect($snapshot)->only(['zone', 'pre_start_minutes', 'post_end_minutes'])->all(),
+            'provider_snapshot' => collect($snapshot)->only(['provider_mode', 'automation_enabled'])->all(),
+            'payment_requirement' => $snapshot['payment_requirement'],
         ]);
         $this->planAfterCommit($oldChannel);
         $this->planAfterCommit($zone->lighting_device_channel_id);

@@ -8,6 +8,7 @@ use App\Models\Facility;
 use App\Models\PublicBookingSetting;
 use App\Models\PublicVisitor;
 use App\Services\PublicBookingService;
+use App\Services\PayFastService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -58,6 +59,17 @@ class PublicBookingController extends Controller
         $d = $r->validate(['outcome' => ['nullable', Rule::in(['success', 'failure'])]]);
 
         return response()->json($s->pay($v, $hold, $d, $r));
+    }
+
+    public function checkoutStatus(Request $r, BookingHold $hold, PublicBookingService $s): JsonResponse
+    {
+        return response()->json($s->checkoutStatus($s->visitor($r), $hold));
+    }
+
+    public function payFastNotify(Request $r, PayFastService $payFast, PublicBookingService $s): JsonResponse
+    {
+        $s->completePayFastCheckout($payFast->verify($r->all()), $r);
+        return response()->json(['status' => 'ok']);
     }
 
     public function confirm(Request $r, BookingHold $hold, PublicBookingService $s): JsonResponse

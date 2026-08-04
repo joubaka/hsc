@@ -21,6 +21,9 @@ class BookingRuleEvaluator
     public function evaluate(User $user, ?Member $member, Facility $facility, Carbon $start, Carbon $end, int $guestCount = 0, ?int $ignoreHoldId = null, int|array|null $ignoreBookingId = null, bool $lightingRequested = false, ?array $profileOverride = null): array
     {
         $facility->loadMissing(['venue', 'sportCode', 'openingHours', 'group']);
+        $facilityTimezone = $facility->venue?->timezone ?: 'Africa/Johannesburg';
+        $localStart = $start->copy()->setTimezone($facilityTimezone);
+        $localEnd = $end->copy()->setTimezone($facilityTimezone);
         $profile = $profileOverride ?? $this->profiles->resolve($user, $member, $facility, $start);
         $policy = $this->policies->resolve($facility, $profile, $start);
         $rules = $policy['values'];
@@ -35,10 +38,10 @@ class BookingRuleEvaluator
         };
         $minutes = $start->diffInMinutes($end);
         $add('facility_active', $facility->active && $facility->bookable, 'This court is not currently bookable.');
-        $opening = $facility->openingHours->first(fn ($row) => $row->active && $row->day_of_week === $start->dayOfWeek
-            && (! $row->effective_from || $row->effective_from <= $start)
-            && (! $row->effective_until || $row->effective_until >= $start)
-            && $start->format('H:i:s') >= $row->opens_at && $end->format('H:i:s') <= $row->closes_at);
+        $opening = $facility->openingHours->first(fn ($row) => $row->active && $row->day_of_week === $localStart->dayOfWeek
+            && (! $row->effective_from || $row->effective_from->startOfDay() <= $localStart)
+            && (! $row->effective_until || $row->effective_until->endOfDay() >= $localStart)
+            && $localStart->format('H:i:s') >= $row->opens_at && $localEnd->format('H:i:s') <= $row->closes_at);
         $add('opening_hours', (bool) $opening, 'The selected time is outside opening hours.');
         $closure = $facility->closures()->where('active', true)->where('starts_at', '<', $end)->where('ends_at', '>', $start)->exists();
         $add('facility_closure', ! $closure, 'The court is closed during this time.');
@@ -75,6 +78,15 @@ class BookingRuleEvaluator
         $price['court_amount'] = $price['total_amount'];
         $price['gross_amount'] += $price['lighting_amount'];
         $price['total_amount'] += $price['lighting_amount'];
+        if ($member) {
+            $courtWaiver = max(0, (int) $price['base_amount'] - (int) $price['allowance_amount']);
+            $price['member_court_waiver_amount'] = $courtWaiver;
+            $price['allowance_amount'] += $courtWaiver;
+            $price['total_amount'] = max(0, $price['total_amount'] - $courtWaiver);
+            $price['court_amount'] = max(0, $price['court_amount'] - $courtWaiver);
+        } else {
+            $price['member_court_waiver_amount'] = 0;
+        }
         $cancellation = [
             'policy_ids' => collect($policy['applied'])->where('type', 'cancellation')->pluck('id')->all(),
             'version' => max(collect($policy['applied'])->where('type', 'cancellation')->pluck('version')->all() ?: [1]),

@@ -18,7 +18,12 @@ class AuthController extends Controller
         ]);
         $user = \App\Models\User::where('email', $validated['email'])->first();
 
-        if (! $user || ! $user->active || ! Hash::check($validated['password'], $user->password)) {
+        if (
+            ! $user
+            || ! $user->active
+            || $user->role === 'member'
+            || ! Hash::check($validated['password'], $user->password)
+        ) {
             return response()->json(['message' => 'The supplied credentials are invalid.'], 422);
         }
 

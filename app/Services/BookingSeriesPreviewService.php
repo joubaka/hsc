@@ -27,7 +27,18 @@ class BookingSeriesPreviewService
         $allowanceByPeriod = [];
         $rows = [];
         foreach ($this->expander->expand($values) as $slot) {
-            $result = $this->evaluator->evaluate($actor, $member, $facility, $slot['starts_at'], $slot['ends_at'], (int) ($values['guest_count'] ?? 0), null, $ignoreBookingIds, (bool) ($values['lighting_requested'] ?? false));
+            $profile = $member ? null : ['profile' => 'public_visitor', 'member_id' => null, 'age' => null, 'sport_membership_id' => null, 'membership_category_id' => null, 'failures' => [], 'eligible' => true];
+            $result = $this->evaluator->evaluate($actor, $member, $facility, $slot['starts_at'], $slot['ends_at'], (int) ($values['guest_count'] ?? 0), null, $ignoreBookingIds, (bool) ($values['lighting_requested'] ?? false), $profile);
+            // Ad-hoc member court hire is free. Centrally managed, invoiced series (league/team/coach blocks)
+            // are an administrative product and retain their configured series price.
+            if (($values['billing_strategy'] ?? null) === 'one_invoice_for_series' && app(BookingAccessService::class)->canManage($actor, $facility)) {
+                $result['allowance'] = ['policy_id' => null, 'minutes' => 0, 'value_cents' => 0];
+                $result['price']['allowance'] = $result['allowance'];
+                $result['price']['allowance_amount'] = 0;
+                $result['price']['member_court_waiver_amount'] = 0;
+                $result['price']['total_amount'] = $result['price']['gross_amount'];
+                $result['price']['court_amount'] = $result['price']['gross_amount'] - (int) ($result['price']['lighting_amount'] ?? 0);
+            }
             $failures = $result['failures'];
             $futureLimit = collect($result['checks'])->firstWhere('code', 'future_quota');
             $dailyLimit = collect($result['checks'])->firstWhere('code', 'daily_quota');

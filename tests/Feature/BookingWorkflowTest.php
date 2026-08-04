@@ -59,10 +59,30 @@ class BookingWorkflowTest extends TestCase
 
         $this->assertTrue($result['eligible']);
         $this->assertSame(17000, $result['price']['gross_amount']);
-        $this->assertSame(8500, $result['price']['allowance_amount']);
-        $this->assertSame(8500, $result['price']['total_amount']);
+        $this->assertSame(12000, $result['price']['allowance_amount']);
+        $this->assertSame(5000, $result['price']['total_amount']);
+        $this->assertSame(5000, $result['price']['court_amount']); // Guest fee only; member court time is fully waived.
+        $this->assertSame(3500, $result['price']['member_court_waiver_amount']);
         $this->assertNotEmpty($result['checks']);
         $this->assertArrayHasKey('cancellation_deadline', $result['cancellation']);
+    }
+
+    public function test_opening_hours_are_evaluated_in_the_venue_timezone(): void
+    {
+        [$user, $member, $facility] = $this->context();
+
+        $result = app(BookingRuleEvaluator::class)->evaluate(
+            $user,
+            $member,
+            $facility,
+            Carbon::parse('2026-08-04T05:30:00Z'),
+            Carbon::parse('2026-08-04T07:30:00Z'),
+        );
+
+        $openingHours = collect($result['checks'])->firstWhere('code', 'opening_hours');
+
+        $this->assertTrue($openingHours['passed']);
+        $this->assertTrue($result['eligible']);
     }
 
     public function test_holds_block_conflicts_but_expired_holds_do_not(): void
@@ -90,7 +110,7 @@ class BookingWorkflowTest extends TestCase
         $this->assertDatabaseHas('facilities', ['code' => 'TEN-2']);
     }
 
-    public function test_confirmation_is_idempotent_conflict_safe_and_creates_one_invoice(): void
+    public function test_member_court_confirmation_is_idempotent_conflict_safe_and_free_without_lighting(): void
     {
         [$user, $member, $facility] = $this->context();
         BookingPricingRule::create(['name' => 'Paid rate', 'scope_type' => 'facility', 'scope_id' => $facility->id, 'pricing_method' => 'fixed', 'amount_cents' => 15000, 'priority' => 10, 'active' => true]);
@@ -100,11 +120,32 @@ class BookingWorkflowTest extends TestCase
         $again = $service->confirm($user, $hold->fresh(), '77777777-7777-4777-8777-777777777777');
 
         $this->assertSame($booking->id, $again->id);
-        $this->assertSame('pending_payment', $booking->status);
-        $this->assertSame(15000, $booking->invoice->total_amount);
+        $this->assertSame('confirmed', $booking->status);
+        $this->assertSame(0, $booking->total_amount);
+        $this->assertNull($booking->invoice);
         $this->assertSame(1, Booking::count());
-        $this->assertDatabaseCount('invoices', 1);
-        $this->assertDatabaseCount('financial_transactions', 1);
+        $this->assertDatabaseCount('invoices', 0);
+        $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_administrator_can_confirm_a_complimentary_member_booking_without_an_invoice(): void
+    {
+        [, $member, $facility] = $this->context();
+        BookingPricingRule::create(['name' => 'Admin waived rate', 'scope_type' => 'facility', 'scope_id' => $facility->id, 'pricing_method' => 'fixed', 'amount_cents' => 15000, 'priority' => 10, 'active' => true]);
+        $admin = User::factory()->create(['role' => 'hsc_super_admin', 'active' => true, 'api_token_hash' => hash('sha256', 'complimentary-admin')]);
+        $hold = app(BookingService::class)->createHold($admin, $facility, $member, $this->slot('2026-08-04 15:00', '2026-08-04 16:00', '99999999-9999-4999-8999-999999999999'));
+
+        $bookingId = $this->withToken('complimentary-admin')->postJson("/api/booking/holds/{$hold->id}/confirm", [
+            'confirmation_key' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'participants' => [],
+            'billing_strategy' => 'no_charge',
+        ])->assertCreated()->json('id');
+
+        $booking = Booking::findOrFail($bookingId);
+        $this->assertSame(0, $booking->total_amount);
+        $this->assertSame('confirmed', $booking->status);
+        $this->assertSame('not_required', $booking->payment_status);
+        $this->assertNull($booking->invoice_id);
     }
 
     public function test_public_availability_is_privacy_safe(): void

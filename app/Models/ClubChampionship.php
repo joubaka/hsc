@@ -1,0 +1,4 @@
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Model;
+class ClubChampionship extends Model {protected $guarded=[];protected function casts():array{return ['starts_on'=>'date','ends_on'=>'date','age_cutoff_on'=>'date','entries_open_at'=>'datetime','entries_close_at'=>'datetime','operations_settings'=>'array'];}public function events(){return $this->hasMany(ChampionshipEvent::class);}public function sessions(){return $this->hasMany(ChampionshipPlayingSession::class);}public function availability(){return $this->hasMany(ChampionshipMemberAvailability::class);}public function courtBlocks(){return $this->hasMany(ChampionshipCourtBlock::class);}public function schedulePublications(){return $this->hasMany(ChampionshipSchedulePublication::class);}public function announcements(){return $this->hasMany(ChampionshipAnnouncement::class);} }

@@ -75,6 +75,9 @@ async function saved(member) {
   await viewMember(member)
 }
 const money = value => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(value || 0))
+const centsMoney = (value, currency = 'ZAR') => new Intl.NumberFormat('en-ZA', { style: 'currency', currency }).format(Number(value || 0) / 100)
+const dateTime = value => value ? new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
+const label = value => (value || 'not recorded').replaceAll('_', ' ')
 
 onMounted(() => Promise.all([loadMeta(), loadMembers()]))
 </script>
@@ -154,6 +157,32 @@ onMounted(() => Promise.all([loadMeta(), loadMembers()]))
             <div v-if="selected.access_credential?.areas?.length" class="d-flex flex-wrap gap-1 mt-3"><VChip v-for="area in selected.access_credential.areas" :key="area" size="small">{{ area.replaceAll('_', ' ') }}</VChip></div>
             <p class="text-caption text-medium-emphasis mt-3">Access PINs are never displayed or stored in plain text.</p>
           </template>
+
+          <h5 class="text-h5 mt-7 mb-3">Booking history</h5>
+          <VCard v-for="booking in selected.bookings" :key="booking.id" variant="outlined" class="mb-3">
+            <VCardText>
+              <div class="d-flex justify-space-between align-start gap-3">
+                <div>
+                  <strong>{{ booking.facility?.name || 'Unknown facility' }}</strong>
+                  <div class="text-caption">{{ booking.facility?.venue?.name || 'No venue' }} · {{ booking.booking_reference }}</div>
+                </div>
+                <VChip size="small" :color="booking.status === 'confirmed' ? 'success' : booking.status === 'cancelled' ? 'error' : 'warning'" variant="tonal">{{ label(booking.status) }}</VChip>
+              </div>
+              <div class="text-body-2 mt-3"><VIcon icon="tabler-calendar-time" size="18" class="me-2" />{{ dateTime(booking.starts_at) }} – {{ dateTime(booking.ends_at) }}</div>
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <VChip size="small" variant="tonal">Payment: {{ label(booking.payment_status) }}</VChip>
+                <VChip size="small" variant="tonal">{{ centsMoney(booking.total_amount, booking.currency) }}</VChip>
+                <VChip v-if="booking.attendance" size="small" variant="tonal">Check-in: {{ label(booking.attendance.status) }}</VChip>
+              </div>
+              <VAlert v-if="booking.lighting_reservations?.length" class="mt-3" color="warning" variant="tonal" density="compact" icon="tabler-bulb">
+                <div v-for="light in booking.lighting_reservations" :key="light.id">
+                  Lighting rental: {{ light.zone?.name || 'Court lights' }} · {{ label(light.status) }} · {{ centsMoney(light.amount, light.currency) }}
+                  <div class="text-caption">{{ dateTime(light.scheduled_on_at) }} – {{ dateTime(light.scheduled_off_at) }}</div>
+                </div>
+              </VAlert>
+            </VCardText>
+          </VCard>
+          <VAlert v-if="!selected.bookings?.length" type="info" variant="tonal">No booking history yet.</VAlert>
         </div>
       </template>
     </VNavigationDrawer>

@@ -205,7 +205,20 @@ class MemberController extends Controller
 
     private function loadMember(Member $member): Member
     {
-        $member->load(['household.members', 'sportCodes', 'accessCredential']);
+        $member->load([
+            'household.members',
+            'sportCodes',
+            'accessCredential',
+            'bookings' => fn ($query) => $query
+                ->with([
+                    'facility:id,venue_id,name,code',
+                    'facility.venue:id,name',
+                    'lightingReservations.zone:id,name,code',
+                    'attendance:id,booking_id,status,checked_in_at',
+                    'invoice:id,invoice_number,status,total_amount,outstanding_amount',
+                ])
+                ->orderByDesc('starts_at'),
+        ]);
         $categories = MembershipCategory::whereIn(
             'id',
             $member->sportCodes->pluck('pivot.membership_category_id')->filter()

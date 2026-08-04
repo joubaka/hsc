@@ -40,7 +40,8 @@ class BookingSeriesController extends Controller
         $data = $this->definition($request);
         $facility = Facility::findOrFail($data['facility_id']);
         abort_unless($facility->sport_code_id && (int) $facility->sport_code_id === (int) $data['sport_code_id'], 422, 'Sport code must match the facility.');
-        abort_unless($request->user()->member_id === (int) $data['member_id'] || app(BookingAccessService::class)->canManage($request->user(), $facility), 403);
+        abort_unless((! empty($data['member_id']) && $request->user()->member_id === (int) $data['member_id']) || app(BookingAccessService::class)->canManage($request->user(), $facility), 403);
+        abort_if(empty($data['member_id']) && $data['billing_strategy'] !== 'no_charge', 422, 'Custom-name bulk bookings must use no charge because there is no member account to invoice.');
         if ($existing = BookingSeries::where('idempotency_key', $data['idempotency_key'])->first()) {
             return response()->json($existing);
         }
@@ -282,7 +283,8 @@ class BookingSeriesController extends Controller
     private function definition(Request $request): array
     {
         return $request->validate([
-            'facility_id' => 'required|exists:facilities,id', 'sport_code_id' => 'required|exists:sport_codes,id', 'member_id' => 'required|exists:members,id',
+            'facility_id' => 'required|exists:facilities,id', 'sport_code_id' => 'required|exists:sport_codes,id',
+            'member_id' => 'nullable|required_without:booked_for_name|exists:members,id', 'booked_for_name' => 'nullable|required_without:member_id|string|min:2|max:120',
             'series_type' => 'required|in:member_recurring,coach_block,league_team,social_group,school_rental,club_programme,tournament,committee,other',
             'starts_on' => 'required|date|after_or_equal:today', 'ends_on' => 'nullable|date|after_or_equal:starts_on', 'start_time' => 'required|date_format:H:i',
             'duration_minutes' => 'required|integer|between:15,480', 'timezone' => 'required|timezone:all',

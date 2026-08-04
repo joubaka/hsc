@@ -48,9 +48,14 @@ class BookingSeriesMaterializationService
                 try {
                     $holdKey = Uuid::uuid5(Uuid::NAMESPACE_URL, "hsc-series:{$series->id}:v{$series->version}:occurrence:{$row['occurrence_number']}:hold")->toString();
                     $confirmKey = Uuid::uuid5(Uuid::NAMESPACE_URL, "hsc-series:{$series->id}:v{$series->version}:occurrence:{$row['occurrence_number']}:confirm")->toString();
-                    $hold = $this->bookings->createHold($actor, Facility::findOrFail($series->facility_id), Member::findOrFail($series->member_id), [
-                        'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'guest_count' => $series->guest_count, 'lighting_requested' => $series->lighting_requested, 'idempotency_key' => $holdKey,
+                    $member = $series->member_id ? Member::findOrFail($series->member_id) : null;
+                    $hold = $this->bookings->createHold($actor, Facility::findOrFail($series->facility_id), $member, [
+                        'starts_at' => $row['starts_at'], 'ends_at' => $row['ends_at'], 'guest_count' => $series->guest_count, 'lighting_requested' => $series->lighting_requested, 'booked_for_name' => $series->booked_for_name, 'idempotency_key' => $holdKey,
                     ]);
+                    if ($series->billing_strategy === 'one_invoice_for_series') {
+                        $hold->update(['price_snapshot' => $row['price'], 'allowance_snapshot' => $row['allowance']]);
+                        $hold->refresh();
+                    }
                     $booking = $this->bookings->confirm($actor, $hold, $confirmKey, $series->participant_template ?? [], $series->billing_strategy);
                     $occurrence = BookingSeriesOccurrence::updateOrCreate(
                         ['booking_series_id' => $series->id, 'series_version' => $series->version, 'occurrence_number' => $row['occurrence_number']],

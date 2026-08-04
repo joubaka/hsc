@@ -27,6 +27,8 @@ declare module 'vue-router/auto-routes' {
     'booking-rule-simulator': RouteRecordInfo<'booking-rule-simulator', '/booking-rule-simulator', Record<never, never>, Record<never, never>>,
     'booking-series': RouteRecordInfo<'booking-series', '/booking-series', Record<never, never>, Record<never, never>>,
     'check-in-operations': RouteRecordInfo<'check-in-operations', '/check-in-operations', Record<never, never>, Record<never, never>>,
+    'club-championships': RouteRecordInfo<'club-championships', '/club-championships', Record<never, never>, Record<never, never>>,
+    'communication-center': RouteRecordInfo<'communication-center', '/communication-center', Record<never, never>, Record<never, never>>,
     'finance-invoices': RouteRecordInfo<'finance-invoices', '/finance-invoices', Record<never, never>, Record<never, never>>,
     'finance-payments': RouteRecordInfo<'finance-payments', '/finance-payments', Record<never, never>, Record<never, never>>,
     'finance-reports': RouteRecordInfo<'finance-reports', '/finance-reports', Record<never, never>, Record<never, never>>,
@@ -34,11 +36,14 @@ declare module 'vue-router/auto-routes' {
     'lighting': RouteRecordInfo<'lighting', '/lighting', Record<never, never>, Record<never, never>>,
     'login': RouteRecordInfo<'login', '/login', Record<never, never>, Record<never, never>>,
     'manage-booking-token': RouteRecordInfo<'manage-booking-token', '/manage-booking/:token', { token: ParamValue<true> }, { token: ParamValue<false> }>,
+    'member-login': RouteRecordInfo<'member-login', '/member-login', Record<never, never>, Record<never, never>>,
+    'member-portal': RouteRecordInfo<'member-portal', '/member-portal', Record<never, never>, Record<never, never>>,
     'membership-applications': RouteRecordInfo<'membership-applications', '/membership-applications', Record<never, never>, Record<never, never>>,
     'membership-periods': RouteRecordInfo<'membership-periods', '/membership-periods', Record<never, never>, Record<never, never>>,
     'membership-setup': RouteRecordInfo<'membership-setup', '/membership-setup', Record<never, never>, Record<never, never>>,
     'public-bookings': RouteRecordInfo<'public-bookings', '/public-bookings', Record<never, never>, Record<never, never>>,
     'renewals': RouteRecordInfo<'renewals', '/renewals', Record<never, never>, Record<never, never>>,
     'second-page': RouteRecordInfo<'second-page', '/second-page', Record<never, never>, Record<never, never>>,
+    'site-settings': RouteRecordInfo<'site-settings', '/site-settings', Record<never, never>, Record<never, never>>,
   }
 }

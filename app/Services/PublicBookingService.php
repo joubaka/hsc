@@ -118,7 +118,7 @@ class PublicBookingService
             $endsAt = Carbon::parse($data['ends_at'])->utc();
             $hold = BookingHold::create(['hold_reference' => (string) Str::uuid(), 'facility_id' => $facility->id, 'user_id' => $this->systemActor()->id, 'member_id' => null, 'public_visitor_id' => $visitor->id, 'starts_at' => $startsAt, 'ends_at' => $endsAt, 'expires_at' => now()->addMinutes($setting->hold_minutes), 'status' => 'active', 'rule_snapshot' => ['profile' => $result['profile'], 'policies' => $result['policies'], 'checks' => $result['checks']], 'price_snapshot' => $result['price'], 'allowance_snapshot' => $result['allowance'], 'cancellation_snapshot' => $result['cancellation'], 'lighting_snapshot' => $result['lighting'], 'public_consent_snapshot' => ['terms_version' => $setting->terms_version, 'privacy_version' => $setting->privacy_version, 'facility_rules_version' => $setting->facility_rules_version, 'accepted_at' => now()->toIso8601String(), 'marketing_consent' => $visitor->marketing_consent], 'idempotency_key' => $data['idempotency_key']]);
             $visitor->update(['terms_accepted_at' => now(), 'privacy_accepted_at' => now()]);
-            $checkout = PublicBookingCheckout::create(['checkout_reference' => (string) Str::uuid(), 'booking_hold_id' => $hold->id, 'public_visitor_id' => $visitor->id, 'provider' => 'dry_run', 'status' => $result['price']['total_amount'] > 0 ? 'pending' : 'not_required', 'currency' => $result['price']['currency'], 'amount' => $result['price']['total_amount'], 'idempotency_key' => (string) Str::uuid(), 'expires_at' => $hold->expires_at]);
+            $checkout = PublicBookingCheckout::create(['checkout_reference' => (string) Str::uuid(), 'booking_hold_id' => $hold->id, 'public_visitor_id' => $visitor->id, 'provider' => app(PayFastService::class)->configured() ? 'payfast' : 'dry_run', 'status' => $result['price']['total_amount'] > 0 ? 'pending' : 'not_required', 'currency' => $result['price']['currency'], 'amount' => $result['price']['total_amount'], 'idempotency_key' => (string) Str::uuid(), 'expires_at' => $hold->expires_at]);
             Audit::record('public_booking.hold_created', $hold, [], ['facility_id' => $facility->id, 'amount' => $checkout->amount]);
             $this->event('hold.created', $visitor, null, $request, ['facility_id' => $facility->id]);
 
@@ -131,10 +131,13 @@ class PublicBookingService
         abort_unless($hold->public_visitor_id === $visitor->id && $hold->status === 'active' && $hold->expires_at->isFuture(), 404, 'This checkout is unavailable.');
         $checkout = PublicBookingCheckout::where('booking_hold_id', $hold->id)->firstOrFail();
         $setting = $this->setting($hold->facility->sport_code_id);
-        abort_unless(app()->environment(['local', 'testing']) && $setting->dry_run_checkout_enabled, 422, 'Online payment is not configured.');
         if ($checkout->status === 'paid') {
             return ['status' => 'paid'];
         }
+        if (app(PayFastService::class)->configured()) {
+            return app(PayFastService::class)->checkout($checkout);
+        }
+        abort_unless(app()->environment(['local', 'testing']) && $setting->dry_run_checkout_enabled, 422, 'Online payment is not configured.');
         if (($data['outcome'] ?? 'success') === 'failure') {
             $checkout->update(['status' => 'failed', 'failed_at' => now()]);
             $this->event('checkout.failed', $visitor, null, $request, []);
@@ -145,6 +148,24 @@ class PublicBookingService
         $this->event('checkout.paid', $visitor, null, $request, []);
 
         return ['status' => 'paid'];
+    }
+
+    public function checkoutStatus(PublicVisitor $visitor, BookingHold $hold): array
+    {
+        abort_unless($hold->public_visitor_id === $visitor->id, 404);
+        $checkout = PublicBookingCheckout::where('booking_hold_id', $hold->id)->firstOrFail();
+        return ['status' => $checkout->status, 'provider' => $checkout->provider, 'expires_at' => $checkout->expires_at];
+    }
+
+    public function completePayFastCheckout(PublicBookingCheckout $checkout, Request $request): void
+    {
+        DB::transaction(function () use ($checkout, $request) {
+            $checkout = PublicBookingCheckout::lockForUpdate()->findOrFail($checkout->id);
+            if ($checkout->status === 'paid') return;
+            abort_unless($checkout->expires_at->isFuture() && $checkout->hold->status === 'active', 422, 'This payment hold has expired.');
+            $checkout->update(['provider' => 'payfast', 'status' => 'paid', 'paid_at' => now(), 'provider_reference' => (string) $request->input('pf_payment_id')]);
+            $this->event('checkout.paid', $checkout->visitor, null, $request, ['provider' => 'payfast']);
+        });
     }
 
     public function confirm(PublicVisitor $visitor, BookingHold $hold, array $data, Request $request): array
@@ -170,7 +191,7 @@ class PublicBookingService
             $hold->update(['status' => 'confirmed']);
             $invoice = $this->billing->createInvoice($actor, $booking);
             if ($amount > 0) {
-                $payment = app(PaymentService::class)->record($actor, ['payment_reference' => 'PUB-'.Str::upper(Str::random(12)), 'member_id' => null, 'public_visitor_id' => $visitor->id, 'payer_name' => $visitor->display_name, 'currency' => $booking->currency, 'amount' => $amount, 'received_on' => now()->toDateString(), 'payment_method' => 'dry_run', 'external_reference' => $checkout->provider_reference, 'bank_reference' => null, 'import_fingerprint' => null, 'source' => 'public_dry_run']);
+                $payment = app(PaymentService::class)->record($actor, ['payment_reference' => 'PUB-'.Str::upper(Str::random(12)), 'member_id' => null, 'public_visitor_id' => $visitor->id, 'payer_name' => $visitor->display_name, 'currency' => $booking->currency, 'amount' => $amount, 'received_on' => now()->toDateString(), 'payment_method' => $checkout->provider === 'payfast' ? 'card' : 'other', 'external_reference' => $checkout->provider_reference, 'bank_reference' => null, 'import_fingerprint' => null, 'source' => 'public_'.$checkout->provider]);
                 $payment = app(PaymentService::class)->confirm($actor, $payment);
                 app(PaymentService::class)->allocate($actor, $payment, $invoice, $amount, 'public-checkout:'.$checkout->id);
             }
@@ -339,7 +360,7 @@ class PublicBookingService
     {
         $checkout = PublicBookingCheckout::where('booking_hold_id', $hold->id)->first();
 
-        return ['hold_reference' => $hold->hold_reference, 'expires_at' => $hold->expires_at, 'price' => $hold->price_snapshot, 'lighting' => $hold->lighting_snapshot, 'cancellation' => $hold->cancellation_snapshot, 'checkout' => $checkout?->only(['checkout_reference', 'status', 'currency', 'amount', 'expires_at'])];
+        return ['hold_reference' => $hold->hold_reference, 'expires_at' => $hold->expires_at, 'price' => $hold->price_snapshot, 'lighting' => $hold->lighting_snapshot, 'cancellation' => $hold->cancellation_snapshot, 'checkout' => $checkout?->only(['checkout_reference', 'provider', 'status', 'currency', 'amount', 'expires_at'])];
     }
 
     private function token(string $raw): PublicBookingManagementToken

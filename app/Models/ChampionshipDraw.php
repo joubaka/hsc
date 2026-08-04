@@ -1,0 +1,2 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model; class ChampionshipDraw extends Model {protected $guarded=[];protected function casts():array{return ['settings'=>'array','published_at'=>'datetime'];}public function matches(){return $this->hasMany(ChampionshipMatch::class);}public function championshipEvent(){return $this->belongsTo(ChampionshipEvent::class,'championship_event_id');} }

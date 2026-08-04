@@ -7,6 +7,27 @@ use Illuminate\Support\Carbon;
 
 class LightingQuoteService
 {
+    public function withCustomWindow(array $quote, Carbon $on, Carbon $off, Carbon $bookingStart, Carbon $bookingEnd): array
+    {
+        abort_unless(($quote['applies'] ?? false) && ! empty($quote['zone_id']), 422, 'This booking has no editable lighting reservation.');
+        $zone = \App\Models\LightingZone::findOrFail($quote['zone_id']);
+        abort_unless($on->lt($off), 422, 'The light-off time must be after the light-on time.');
+        abort_unless($on->lte($bookingStart) && $off->gte($bookingEnd), 422, 'Lighting must cover the full court booking time.');
+        $minutes = (int) $on->diffInMinutes($off);
+        abort_unless($minutes <= $zone->maximum_continuous_on_minutes, 422, "Lighting may run for at most {$zone->maximum_continuous_on_minutes} minutes continuously.");
+        $minimum = (int) ($quote['minimum_minutes'] ?? $zone->minimum_billable_minutes);
+        $increment = max(1, (int) ($quote['increment_minutes'] ?? $zone->billing_increment_minutes));
+        $billable = max($minimum, (int) (ceil($minutes / $increment) * $increment));
+        $rate = (int) ($quote['unit_amount'] ?? 0);
+        $amount = match ($quote['pricing_method'] ?? 'fixed') {
+            'hourly' => intdiv($rate * $billable, 60), 'per_minute' => $rate * $billable, default => $rate,
+        };
+
+        return [...$quote, 'scheduled_on_at' => $on->toIso8601String(), 'scheduled_off_at' => $off->toIso8601String(),
+            'pre_start_minutes' => $on->diffInMinutes($bookingStart, false), 'post_end_minutes' => $bookingEnd->diffInMinutes($off, false),
+            'billable_minutes' => $billable, 'amount' => $amount, 'payment_requirement' => $amount > 0 ? 'paid' : 'not_required'];
+    }
+
     public function quote(Facility $facility, Carbon $start, Carbon $end, string $profile, bool $requested = false, bool $adminOverride = false): array
     {
         if (! $facility->lighting_available) {
@@ -41,7 +62,7 @@ class LightingQuoteService
 
         return ['available' => true, 'applies' => true, 'required' => $required, 'reason' => $reason, 'zone_id' => $zone->id, 'zone' => ['id' => $zone->id, 'code' => $zone->code, 'name' => $zone->name],
             'scheduled_on_at' => $start->copy()->subMinutes($zone->pre_start_minutes)->toIso8601String(), 'scheduled_off_at' => $end->copy()->addMinutes($zone->post_end_minutes)->toIso8601String(),
-            'pre_start_minutes' => $zone->pre_start_minutes, 'post_end_minutes' => $zone->post_end_minutes, 'billable_minutes' => $billable, 'amount' => $amount, 'currency' => 'ZAR',
+            'pre_start_minutes' => $zone->pre_start_minutes, 'post_end_minutes' => $zone->post_end_minutes, 'minimum_minutes' => $minimum, 'increment_minutes' => $increment, 'billable_minutes' => $billable, 'amount' => $amount, 'currency' => 'ZAR',
             'tariff_id' => $tariff?->id, 'tariff_version' => $tariff?->version, 'tariff_name' => $tariff?->name, 'unit_amount' => $rate, 'pricing_method' => $tariff?->pricing_method ?? 'fixed',
             'financial_owner_type' => $tariff?->financial_owner_type ?? $zone->financial_owner_type, 'provider_mode' => $zone->provider_mode,
             'automation_enabled' => (bool) $zone->automatic_control_enabled, 'payment_requirement' => $amount > 0 ? 'paid' : 'not_required'];

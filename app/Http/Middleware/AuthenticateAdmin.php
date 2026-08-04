@@ -18,6 +18,10 @@ class AuthenticateAdmin
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
+        if ($user->role === 'member') {
+            return response()->json(['message' => 'Administrator access is required.'], 403);
+        }
+
         auth()->setUser($user);
         $request->setUserResolver(fn () => $user);
 
