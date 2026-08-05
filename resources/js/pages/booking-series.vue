@@ -1,6 +1,7 @@
 <script setup>
 /* eslint-disable camelcase */
 import { $api } from '@/utils/api'
+import { BOOKING_WEEKDAYS, useBookingSeries } from '@/composables/useBookingSeries'
 
 const series = ref([])
 const facilities = ref([])
@@ -30,18 +31,8 @@ const recipientReady = computed(() => form.recipient_type === 'custom' ? form.bo
 
 const mutation = reactive({ facility_id: null, starts_at: '', duration_minutes: 60, scope: 'occurrence', all_or_nothing: false })
 
-const weekdays = [
-  { title: 'Mon', value: 1 },
-  { title: 'Tue', value: 2 },
-  { title: 'Wed', value: 3 },
-  { title: 'Thu', value: 4 },
-  { title: 'Fri', value: 5 },
-  { title: 'Sat', value: 6 },
-  { title: 'Sun', value: 7 },
-]
-
-const money = value => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format((value || 0) / 100)
-const label = value => (value || '').replaceAll('_', ' ')
+const weekdays = BOOKING_WEEKDAYS
+const { label, money } = useBookingSeries()
 
 async function load() {
   busy.value = true

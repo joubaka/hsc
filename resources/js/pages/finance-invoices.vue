@@ -76,14 +76,15 @@ onMounted(load)
       <VSelect v-model="selectedMembership" :items="meta.memberships" :item-title="membershipTitle" item-value="id" label="Approved membership" style="min-width: 320px" hide-details />
       <VBtn :disabled="!selectedMembership" :loading="busy" @click="generate">Generate invoice</VBtn>
     </VCardText></VCard>
-    <VCard><VTable><thead><tr><th>Invoice</th><th>Member</th><th>Issued</th><th>Due</th><th>Total</th><th>Paid</th><th>Outstanding</th><th>Status</th><th /></tr></thead>
-      <tbody><tr v-for="invoice in invoices" :key="invoice.id"><td>{{ invoice.invoice_number || `Draft #${invoice.id}` }}</td><td>{{ invoice.member.display_name }}</td><td>{{ invoice.issued_on?.slice(0,10) || '—' }}</td><td>{{ invoice.due_on?.slice(0,10) || '—' }}</td><td>{{ money(invoice.total_amount, invoice.currency) }}</td><td>{{ money(invoice.paid_amount, invoice.currency) }}</td><td>{{ money(invoice.outstanding_amount, invoice.currency) }}</td><td><VChip size="small">{{ invoice.status.replaceAll('_',' ') }}</VChip></td><td><VBtn icon="tabler-chevron-right" variant="text" @click="view(invoice.id)" /></td></tr></tbody>
+    <VCard class="hsc-table-scroll"><VTable><thead><tr><th>Invoice</th><th>Member</th><th>Issued</th><th>Due</th><th>Total</th><th>Paid</th><th>Outstanding</th><th>Status</th><th /></tr></thead>
+      <tbody><tr v-for="invoice in invoices" :key="invoice.id"><td>{{ invoice.invoice_number || `Draft #${invoice.id}` }}</td><td>{{ invoice.member.display_name }}</td><td>{{ invoice.issued_on?.slice(0,10) || '—' }}</td><td>{{ invoice.due_on?.slice(0,10) || '—' }}</td><td>{{ money(invoice.total_amount, invoice.currency) }}</td><td>{{ money(invoice.paid_amount, invoice.currency) }}</td><td>{{ money(invoice.outstanding_amount, invoice.currency) }}</td><td><VChip size="small">{{ invoice.status.replaceAll('_',' ') }}</VChip></td><td><VBtn icon="tabler-chevron-right" variant="text" :aria-label="`View invoice ${invoice.invoice_number || invoice.id}`" @click="view(invoice.id)" /></td></tr></tbody>
     </VTable></VCard>
     <VCard v-if="bulkResults.length" class="mt-4"><VCardTitle>Bulk outcomes</VCardTitle><VTable><tbody><tr v-for="row in bulkResults" :key="row.membership_id"><td>Membership #{{ row.membership_id }}</td><td>{{ row.outcome.replaceAll('_',' ') }}</td><td>{{ row.invoice_id ? `Invoice #${row.invoice_id}` : '—' }}</td></tr></tbody></VTable></VCard>
 
-    <VNavigationDrawer :model-value="Boolean(detail)" location="right" temporary width="620" @update:model-value="value => { if (!value) detail = null }">
-      <div v-if="detail" class="pa-6">
-        <div class="d-flex justify-space-between"><h4 class="text-h4">{{ detail.invoice_number || `Draft #${detail.id}` }}</h4><VBtn icon="tabler-x" variant="text" @click="detail=null" /></div>
+    <VDialog :model-value="Boolean(detail)" max-width="760" scrollable @update:model-value="value => { if (!value) detail = null }">
+      <VCard v-if="detail">
+        <VCardText class="pa-6">
+        <div class="d-flex justify-space-between"><h4 class="text-h4">{{ detail.invoice_number || `Draft #${detail.id}` }}</h4><VBtn icon="tabler-x" variant="text" aria-label="Close invoice details" @click="detail=null" /></div>
         <p>{{ detail.member.display_name }} · {{ detail.currency }}</p><VChip>{{ detail.status.replaceAll('_',' ') }}</VChip>
         <VDivider class="my-5" /><h5 class="text-h5">Invoice lines</h5>
         <VTable><thead><tr><th>Description</th><th>Owner</th><th class="text-end">Amount</th></tr></thead><tbody><tr v-for="line in detail.lines" :key="line.id"><td>{{ line.description }}</td><td>{{ line.financial_owner_type.replaceAll('_',' ') }}<span v-if="line.sport_code"> · {{ line.sport_code.name }}</span></td><td class="text-end">{{ money(line.total_amount, detail.currency) }}</td></tr></tbody></VTable>
@@ -94,8 +95,9 @@ onMounted(load)
           <VBtn v-if="detail.status === 'issued'" variant="tonal" color="error" @click="voidDialog=true">Void</VBtn>
           <VBtn v-if="!['draft','void','paid'].includes(detail.status)" variant="tonal" @click="creditDialog=true">Credit</VBtn>
         </div>
-      </div>
-    </VNavigationDrawer>
+        </VCardText>
+      </VCard>
+    </VDialog>
     <VDialog v-model="voidDialog" max-width="500"><VCard><VCardTitle class="pa-6">Void unpaid invoice?</VCardTitle><VCardText><VTextarea v-model="voidReason" label="Reason" /></VCardText><VCardActions><VSpacer /><VBtn variant="tonal" @click="voidDialog=false">Cancel</VBtn><VBtn color="error" :disabled="!voidReason" @click="action('void',{reason:voidReason})">Confirm void</VBtn></VCardActions></VCard></VDialog>
     <VDialog v-model="creditDialog" max-width="500"><VCard><VCardTitle class="pa-6">Issue partial credit note</VCardTitle><VCardText><VTextField v-model="credit.amount" type="number" label="Amount (ZAR)" /><VTextarea v-model="credit.reason" label="Reason" /></VCardText><VCardActions><VSpacer /><VBtn variant="tonal" @click="creditDialog=false">Cancel</VBtn><VBtn :disabled="!credit.amount || !credit.reason" @click="issueCredit">Issue and apply</VBtn></VCardActions></VCard></VDialog>
   </div>

@@ -107,7 +107,7 @@ onMounted(() => { if (!localStorage.getItem('hsc_member_token')) location.href =
 
 <template>
   <div class="portal-shell">
-    <header class="portal-header px-5 py-4"><div><div class="text-caption opacity-70">HERMANUS SPORTS CLUB</div><div class="text-h5 font-weight-bold">Member portal</div></div><div class="d-flex align-center gap-3"><span class="d-none d-sm-inline">{{ data.member.display_name }}</span><VBtn icon="tabler-logout" variant="text" color="white" @click="logout" /></div></header>
+    <header class="portal-header px-5 py-4"><div><div class="text-caption opacity-70">HERMANUS SPORTS CLUB</div><div class="text-h5 font-weight-bold">Member portal</div></div><div class="d-flex align-center gap-3"><span class="d-none d-sm-inline">{{ data.member.display_name }}</span><VBtn icon="tabler-logout" variant="text" color="white" aria-label="Log out" @click="logout" /></div></header>
     <VProgressLinear v-if="loading" indeterminate />
     <main class="portal-main pa-4 pa-md-7">
       <VAlert v-if="error" type="error" closable class="mb-5" @click:close="error=''">{{ error }}</VAlert><VAlert v-if="notice" type="success" closable class="mb-5" @click:close="notice=''">{{ notice }}</VAlert>
@@ -118,7 +118,7 @@ onMounted(() => { if (!localStorage.getItem('hsc_member_token')) location.href =
         <VWindowItem value="book">
           <div class="d-flex flex-wrap align-center justify-space-between gap-3 mb-4">
             <div><h2 class="text-h4">Court calendar</h2><p class="text-medium-emphasis mb-0">Choose an available time directly from the live schedule.</p></div>
-            <div class="d-flex align-center gap-2"><VBtn icon="tabler-chevron-left" variant="tonal" @click="moveDay(-1)" /><VTextField v-model="selectedDate" type="date" hide-details density="compact" class="member-date" /><VBtn icon="tabler-chevron-right" variant="tonal" @click="moveDay(1)" /><VBtn variant="text" @click="selectedDate=new Date().toISOString().slice(0,10)">Today</VBtn></div>
+            <div class="d-flex align-center gap-2"><VBtn icon="tabler-chevron-left" variant="tonal" aria-label="Previous day" @click="moveDay(-1)" /><VTextField v-model="selectedDate" type="date" label="Booking date" hide-details density="compact" class="member-date" /><VBtn icon="tabler-chevron-right" variant="tonal" aria-label="Next day" @click="moveDay(1)" /><VBtn variant="text" @click="selectedDate=new Date().toISOString().slice(0,10)">Today</VBtn></div>
           </div>
           <VCard>
             <VCardText class="calendar-tools"><div><div class="text-h5">{{ formatDay(selectedDate) }}</div><div class="text-caption">Times shown in South Africa time · Court hire is free for members</div></div><VSelect v-model="duration" :items="[30,60,90,120]" label="Duration" suffix="min" density="compact" hide-details /><VTextField v-model.number="booking.guest_count" type="number" min="0" max="20" label="Guests" density="compact" hide-details /><VSwitch v-model="booking.lighting_requested" label="Lighting" density="compact" hide-details /></VCardText>

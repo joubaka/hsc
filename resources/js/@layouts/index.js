@@ -25,7 +25,9 @@ export const createLayouts = userConfig => {
     // Reactive Values (Store)
     configStore.$patch({
       appContentLayoutNav: cookieRef('appContentLayoutNav', userConfig.app?.contentLayoutNav ?? layoutConfig.app.contentLayoutNav).value,
-      appContentWidth: cookieRef('appContentWidth', userConfig.app?.contentWidth ?? layoutConfig.app.contentWidth).value,
+      // Project configuration must win over a stale template preference cookie.
+      appContentWidth: userConfig.app?.contentWidth
+        ?? cookieRef('appContentWidth', layoutConfig.app.contentWidth).value,
       footerType: cookieRef('footerType', userConfig.footer?.type ?? layoutConfig.footer.type).value,
       navbarType: cookieRef('navbarType', userConfig.navbar?.type ?? layoutConfig.navbar.type).value,
       isNavbarBlurEnabled: cookieRef('isNavbarBlurEnabled', userConfig.navbar?.navbarBlur ?? layoutConfig.navbar.navbarBlur).value,

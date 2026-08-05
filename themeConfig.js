@@ -15,7 +15,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
       alt: 'Hermanus Sports Club',
       style: 'display:block; block-size:52px; inline-size:auto; object-fit:contain',
     }),
-    contentWidth: ContentWidth.Boxed,
+    contentWidth: ContentWidth.Fluid,
     contentLayoutNav: AppContentLayoutNav.Vertical,
     overlayNavFromBreakpoint: breakpointsVuetifyV3.lg - 1, // 1 for matching with vuetify breakpoint. Docs: https://next.vuetifyjs.com/en/features/display-and-platform/
     i18n: {

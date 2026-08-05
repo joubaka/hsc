@@ -1,6 +1,15 @@
 <script setup>
 /* eslint-disable camelcase */
 import { $api } from '@/utils/api'
+import BookingEditDialog from '@/components/bookings/BookingEditDialog.vue'
+import {
+  BOOKING_DAY_END,
+  BOOKING_DAY_START,
+  BOOKING_LANE_HEIGHT,
+  BOOKING_PIXELS_PER_MINUTE,
+  BOOKING_TIME_SLOTS,
+  useBookingCalendar,
+} from '@/composables/useBookingCalendar'
 import { useDisplay } from 'vuetify'
 
 const { smAndDown } = useDisplay()
@@ -26,30 +35,17 @@ const editOpen = ref(false)
 const editTarget = ref(null)
 const editForm = reactive({ facility_id: null, date: '', start_time: '', duration: 60, booked_for_name: '', notes: '', has_lighting: false, lighting_on_at: '', lighting_off_at: '', lighting_amount: 0 })
 
-const dayStart = 6 * 60
-const dayEnd = 22 * 60
-const pixelsPerMinute = 1.5
-const laneHeight = (dayEnd - dayStart) * pixelsPerMinute
-const timeSlots = Array.from({ length: (dayEnd - dayStart) / 30 }, (_, index) => dayStart + index * 30)
+const dayStart = BOOKING_DAY_START
+const dayEnd = BOOKING_DAY_END
+const pixelsPerMinute = BOOKING_PIXELS_PER_MINUTE
+const laneHeight = BOOKING_LANE_HEIGHT
+const timeSlots = BOOKING_TIME_SLOTS
 const form = reactive({ recipient_type: 'member', member_id: null, booked_for_name: '', facility_id: null, facility_ids: [], date: selectedDate.value, start_time: '10:00', duration: 60, guest_count: 0, lighting_requested: false, no_charge: false })
 
-const money = (value, currency = 'ZAR') => new Intl.NumberFormat('en-ZA', { style: 'currency', currency }).format((value || 0) / 100)
-const minutesToTime = minutes => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
-
-const timeToMinutes = value => { const [hours, minutes] = String(value).slice(0, 5).split(':').map(Number)
-
-  return hours * 60 + minutes }
-
-const localDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg' }).format(new Date(value))
-
-const localMinutes = value => { const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(value))
-
-  return Number(parts.find(part => part.type === 'hour').value) * 60 + Number(parts.find(part => part.type === 'minute').value) }
-const localDateTimeInput = value => { if (!value) return ''; const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(value)); const part = type => parts.find(row => row.type === type)?.value; return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}` }
-
-const formatDay = value => new Intl.DateTimeFormat('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Johannesburg' }).format(new Date(`${value}T12:00:00+02:00`))
+const { formatDay, localDate, localDateTimeInput, localMinutes, minutesToTime, money, timeToMinutes } = useBookingCalendar()
 const dayOfWeek = computed(() => new Date(`${selectedDate.value}T12:00:00+02:00`).getDay())
 const visibleFacilities = computed(() => facilities.value.filter(item => item.active && item.bookable))
+
 const displayedFacilities = computed(() => {
   if (!smAndDown.value) return visibleFacilities.value
 
@@ -57,6 +53,7 @@ const displayedFacilities = computed(() => {
 
   return selected ? [selected] : visibleFacilities.value.slice(0, 1)
 })
+
 const selectedFacility = computed(() => facilities.value.find(item => item.id === form.facility_id))
 const selectedFacilities = computed(() => visibleFacilities.value.filter(item => form.facility_ids.includes(item.id)))
 const selectedCourtNames = computed(() => selectedFacilities.value.map(item => item.name).join(', '))
@@ -122,6 +119,7 @@ async function simulate() {
   try {
     const courtResults = await Promise.all(form.facility_ids.map(async facilityId => ({ facility: facilities.value.find(item => item.id === facilityId), evaluation: await $api('/booking/simulate', { method: 'POST', body: payload(facilityId) }) })))
     const first = courtResults[0]?.evaluation
+
     result.value = first ? { ...first, eligible: courtResults.every(row => row.evaluation.eligible), court_results: courtResults, price: { ...first.price, gross_amount: courtResults.reduce((sum, row) => sum + row.evaluation.price.gross_amount, 0), total_amount: courtResults.reduce((sum, row) => sum + row.evaluation.price.total_amount, 0) } } : null
 
     return result.value
@@ -185,7 +183,9 @@ function openEdit(item) {
   editForm.duration = Number(item.duration_minutes) || Math.round((new Date(item.ends_at) - new Date(item.starts_at)) / 60000)
   editForm.booked_for_name = item.booked_for_name || ''
   editForm.notes = item.notes || ''
+
   const lighting = item.lighting_reservations?.find(row => !['cancelled', 'off'].includes(row.status))
+
   editForm.has_lighting = Boolean(lighting)
   editForm.lighting_on_at = localDateTimeInput(lighting?.scheduled_on_at)
   editForm.lighting_off_at = localDateTimeInput(lighting?.scheduled_off_at)
@@ -193,12 +193,13 @@ function openEdit(item) {
   editOpen.value = true
   error.value = ''
 }
-async function saveEdit() {
+async function saveEdit(updatedForm = editForm) {
   busy.value = true
   error.value = ''
   try {
-    const start = new Date(`${editForm.date}T${editForm.start_time}:00+02:00`)
-    await $api(`/bookings/${editTarget.value.id}`, { method: 'PATCH', body: { facility_id: editForm.facility_id, starts_at: start.toISOString(), ends_at: new Date(start.getTime() + Number(editForm.duration) * 60000).toISOString(), booked_for_name: editTarget.value.member_id ? null : editForm.booked_for_name, notes: editForm.notes || null, lighting_on_at: editForm.has_lighting ? new Date(`${editForm.lighting_on_at}:00+02:00`).toISOString() : null, lighting_off_at: editForm.has_lighting ? new Date(`${editForm.lighting_off_at}:00+02:00`).toISOString() : null } })
+    const start = new Date(`${updatedForm.date}T${updatedForm.start_time}:00+02:00`)
+
+    await $api(`/bookings/${editTarget.value.id}`, { method: 'PATCH', body: { facility_id: updatedForm.facility_id, starts_at: start.toISOString(), ends_at: new Date(start.getTime() + Number(updatedForm.duration) * 60000).toISOString(), booked_for_name: editTarget.value.member_id ? null : updatedForm.booked_for_name, notes: updatedForm.notes || null, lighting_on_at: updatedForm.has_lighting ? new Date(`${updatedForm.lighting_on_at}:00+02:00`).toISOString() : null, lighting_off_at: updatedForm.has_lighting ? new Date(`${updatedForm.lighting_off_at}:00+02:00`).toISOString() : null } })
     editOpen.value = false
     success.value = `Booking ${editTarget.value.booking_reference} updated.`
     await loadSchedule()
@@ -826,37 +827,15 @@ onMounted(loadBase)
       </VWindowItem>
     </VWindow>
 
-    <VDialog
+    <BookingEditDialog
       v-model="editOpen"
-      max-width="680"
-      :fullscreen="smAndDown"
-      persistent
-    >
-      <VCard v-if="editTarget">
-        <VCardTitle class="booking-dialog-title">
-          <div><div class="text-h5">Edit {{ editTarget.booking_reference }}</div><div class="text-body-2 text-medium-emphasis">Change the court or time, then save.</div></div>
-          <VBtn icon="tabler-x" variant="text" aria-label="Close edit" :disabled="busy" @click="editOpen=false" />
-        </VCardTitle><VDivider /><VCardText class="pa-6">
-          <VAlert type="info" variant="tonal" class="mb-5">Availability and booking rules are checked again. Changes that alter an existing invoice price require cancellation and a new booking.</VAlert>
-          <VRow>
-            <VCol cols="12"><VSelect v-model="editForm.facility_id" :items="visibleFacilities" item-title="name" item-value="id" label="Court" /></VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="editForm.date" type="date" label="Date" /></VCol>
-            <VCol cols="6" sm="3"><VTextField v-model="editForm.start_time" type="time" label="Start time" /></VCol>
-            <VCol cols="6" sm="3"><VSelect v-model="editForm.duration" :items="[30,60,90,120]" label="Minutes" /></VCol>
-            <template v-if="editForm.has_lighting">
-              <VCol cols="12"><VAlert type="warning" variant="tonal">Lighting is charged separately to every player, including members. Adjusting these times recalculates the billable lighting window.</VAlert></VCol>
-              <VCol cols="12" sm="6"><VTextField v-model="editForm.lighting_on_at" type="datetime-local" label="Lights switch on" /></VCol>
-              <VCol cols="12" sm="6"><VTextField v-model="editForm.lighting_off_at" type="datetime-local" label="Lights switch off" /></VCol>
-              <VCol cols="12"><div class="booking-summary"><div><span>Current lighting charge</span><strong>{{ money(editForm.lighting_amount) }}</strong></div><div><span>Rule</span><strong>Must cover the full booking</strong></div></div></VCol>
-            </template>
-            <VCol v-if="!editTarget.member_id" cols="12"><VTextField v-model="editForm.booked_for_name" label="Custom booking name" /></VCol>
-            <VCol cols="12"><VTextarea v-model="editForm.notes" label="Admin notes (optional)" maxlength="1000" counter /></VCol>
-          </VRow>
-        </VCardText><VDivider /><VCardActions class="booking-actions pa-5">
-          <VBtn variant="text" :disabled="busy" @click="editOpen=false">Close</VBtn><VSpacer /><VBtn color="primary" prepend-icon="tabler-device-floppy" :loading="busy" :disabled="!editForm.facility_id||!editForm.date||!editForm.start_time||(editForm.has_lighting&&(!editForm.lighting_on_at||!editForm.lighting_off_at))||(!editTarget.member_id&&editForm.booked_for_name.trim().length<2)" @click="saveEdit">Save changes</VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
+      :target="editTarget"
+      :initial-form="editForm"
+      :facilities="visibleFacilities"
+      :busy="busy"
+      :money="money"
+      @save="saveEdit"
+    />
 
     <VDialog
       v-model="cancelOpen"

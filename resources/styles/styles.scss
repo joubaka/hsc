@@ -1,1 +1,83 @@
-// Write your overrides
+:root {
+  --hsc-content-gap: 1.5rem;
+  --hsc-control-min-size: 44px;
+  --hsc-radius: 12px;
+}
+
+html { overflow-x: hidden; }
+body { min-inline-size: 320px; }
+.v-card { border-radius: var(--hsc-radius); }
+
+.v-btn:focus-visible,
+.v-list-item:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(var(--v-theme-primary), 0.35);
+  outline-offset: 2px;
+}
+
+.hsc-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-block-end: var(--hsc-content-gap);
+}
+
+.hsc-page-header :is(h1, h2, h3) { margin: 0; }
+.hsc-table-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
+
+.v-table,
+.v-data-table {
+  max-inline-size: 100%;
+}
+
+.v-table__wrapper,
+.v-data-table__wrapper {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.v-btn,
+.v-list-item,
+button,
+a {
+  touch-action: manipulation;
+}
+
+.v-btn--icon {
+  min-inline-size: var(--hsc-control-min-size);
+  min-block-size: var(--hsc-control-min-size);
+}
+
+.hsc-detail-drawer {
+  inline-size: min(100vw, var(--hsc-drawer-width, 620px)) !important;
+  max-inline-size: 100vw;
+}
+
+@media (max-width: 600px) {
+  :root { --hsc-content-gap: 1rem; }
+  .layout-page-content { padding-inline: 1rem !important; }
+  .hsc-page-header { align-items: stretch; }
+  .hsc-page-header > :last-child:not(:first-child) { inline-size: 100%; }
+  .hsc-page-header > .v-btn:last-child:not(:first-child) { inline-size: 100%; }
+
+  .v-dialog > .v-overlay__content {
+    max-inline-size: calc(100vw - 1rem) !important;
+    max-block-size: calc(100dvh - 1rem) !important;
+    margin: 0.5rem !important;
+  }
+
+  .v-navigation-drawer.hsc-detail-drawer { inline-size: 100vw !important; }
+
+  .v-card-title,
+  .v-card-actions {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .v-card-actions .v-btn {
+    min-block-size: var(--hsc-control-min-size);
+  }
+}

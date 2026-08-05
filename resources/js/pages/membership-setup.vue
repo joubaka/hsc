@@ -114,7 +114,7 @@ onMounted(load)
               <template #prepend><VAvatar size="34" :style="{ backgroundColor: `${code.colour}22`, color: code.colour }"><VIcon icon="tabler-ball-tennis" size="20" /></VAvatar></template>
               <VListItemTitle>{{ code.name }}</VListItemTitle>
               <VListItemSubtitle>{{ code.members_count }} members · {{ code.categories.length }} categories</VListItemSubtitle>
-              <template v-if="isSuperAdmin" #append><VBtn icon="tabler-edit" size="small" variant="text" @click.stop="editSport(code)" /></template>
+              <template v-if="isSuperAdmin" #append><VBtn icon="tabler-edit" size="small" variant="text" :aria-label="`Edit ${code.name}`" @click.stop="editSport(code)" /></template>
             </VListItem>
           </VList>
         </VCard>
@@ -138,7 +138,7 @@ onMounted(load)
                 <td class="text-end">{{ money(category.hsc_levy) }}</td>
                 <td class="text-end font-weight-bold">{{ money(category.total_fee) }}</td>
                 <td><VChip size="small" :color="category.active ? 'success' : 'secondary'" variant="tonal">{{ category.active ? 'Active' : 'Inactive' }}</VChip></td>
-                <td><VBtn icon="tabler-edit" size="small" variant="text" @click="editCategory(category)" /></td>
+                <td><VBtn icon="tabler-edit" size="small" variant="text" :aria-label="`Edit ${category.name}`" @click="editCategory(category)" /></td>
               </tr>
               <tr v-if="!selectedCode.categories.length"><td colspan="8" class="text-center pa-8 text-medium-emphasis">No membership categories yet.</td></tr>
             </tbody>

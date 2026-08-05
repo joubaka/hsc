@@ -8,6 +8,12 @@ export {}
 declare global {
   const $api: typeof import('./resources/js/utils/api.js')['$api']
   const $memberApi: typeof import('./resources/js/utils/memberApi.js')['$memberApi']
+  const BOOKING_DAY_END: typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_DAY_END']
+  const BOOKING_DAY_START: typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_DAY_START']
+  const BOOKING_LANE_HEIGHT: typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_LANE_HEIGHT']
+  const BOOKING_PIXELS_PER_MINUTE: typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_PIXELS_PER_MINUTE']
+  const BOOKING_TIME_SLOTS: typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_TIME_SLOTS']
+  const BOOKING_WEEKDAYS: typeof import('./resources/js/composables/useBookingSeries.js')['BOOKING_WEEKDAYS']
   const COOKIE_MAX_AGE_1_YEAR: typeof import('./resources/js/utils/constants.js')['COOKIE_MAX_AGE_1_YEAR']
   const EffectScope: typeof import('vue')['EffectScope']
   const acceptHMRUpdate: typeof import('pinia')['acceptHMRUpdate']
@@ -179,6 +185,8 @@ declare global {
   const useBase64: typeof import('@vueuse/core')['useBase64']
   const useBattery: typeof import('@vueuse/core')['useBattery']
   const useBluetooth: typeof import('@vueuse/core')['useBluetooth']
+  const useBookingCalendar: typeof import('./resources/js/composables/useBookingCalendar.js')['useBookingCalendar']
+  const useBookingSeries: typeof import('./resources/js/composables/useBookingSeries.js')['useBookingSeries']
   const useBreakpoints: typeof import('@vueuse/core')['useBreakpoints']
   const useBroadcastChannel: typeof import('@vueuse/core')['useBroadcastChannel']
   const useBrowserLocation: typeof import('@vueuse/core')['useBrowserLocation']
@@ -368,6 +376,12 @@ declare module 'vue' {
   interface ComponentCustomProperties {
     readonly $api: UnwrapRef<typeof import('./resources/js/utils/api.js')['$api']>
     readonly $memberApi: UnwrapRef<typeof import('./resources/js/utils/memberApi.js')['$memberApi']>
+    readonly BOOKING_DAY_END: UnwrapRef<typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_DAY_END']>
+    readonly BOOKING_DAY_START: UnwrapRef<typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_DAY_START']>
+    readonly BOOKING_LANE_HEIGHT: UnwrapRef<typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_LANE_HEIGHT']>
+    readonly BOOKING_PIXELS_PER_MINUTE: UnwrapRef<typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_PIXELS_PER_MINUTE']>
+    readonly BOOKING_TIME_SLOTS: UnwrapRef<typeof import('./resources/js/composables/useBookingCalendar.js')['BOOKING_TIME_SLOTS']>
+    readonly BOOKING_WEEKDAYS: UnwrapRef<typeof import('./resources/js/composables/useBookingSeries.js')['BOOKING_WEEKDAYS']>
     readonly COOKIE_MAX_AGE_1_YEAR: UnwrapRef<typeof import('./resources/js/utils/constants.js')['COOKIE_MAX_AGE_1_YEAR']>
     readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
@@ -539,6 +553,8 @@ declare module 'vue' {
     readonly useBase64: UnwrapRef<typeof import('@vueuse/core')['useBase64']>
     readonly useBattery: UnwrapRef<typeof import('@vueuse/core')['useBattery']>
     readonly useBluetooth: UnwrapRef<typeof import('@vueuse/core')['useBluetooth']>
+    readonly useBookingCalendar: UnwrapRef<typeof import('./resources/js/composables/useBookingCalendar.js')['useBookingCalendar']>
+    readonly useBookingSeries: UnwrapRef<typeof import('./resources/js/composables/useBookingSeries.js')['useBookingSeries']>
     readonly useBreakpoints: UnwrapRef<typeof import('@vueuse/core')['useBreakpoints']>
     readonly useBroadcastChannel: UnwrapRef<typeof import('@vueuse/core')['useBroadcastChannel']>
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>

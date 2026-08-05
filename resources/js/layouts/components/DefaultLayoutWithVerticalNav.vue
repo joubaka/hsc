@@ -19,6 +19,7 @@ import { VerticalNavLayout } from '@layouts'
       <div class="d-flex h-100 align-center">
         <IconBtn
           id="vertical-nav-toggle-btn"
+          aria-label="Open navigation menu"
           class="ms-n3 d-lg-none"
           @click="toggleVerticalOverlayNavActive(true)"
         >

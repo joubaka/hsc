@@ -84,13 +84,13 @@ onMounted(() => Promise.all([loadMeta(), loadMembers()]))
 
 <template>
   <div>
-    <div class="d-flex flex-wrap align-center justify-space-between gap-4 mb-6">
+    <header class="hsc-page-header">
       <div>
-        <h3 class="text-h3">Members</h3>
+        <h1 class="text-h3">Members</h1>
         <p class="text-body-1 text-medium-emphasis mb-0">One HSC profile, with memberships managed by each sport code.</p>
       </div>
       <VBtn v-if="canEditCentral" prepend-icon="tabler-user-plus" @click="addMember">Add member</VBtn>
-    </div>
+    </header>
 
     <VRow class="mb-2">
       <VCol v-for="card in cards" :key="card[0]" cols="12" sm="6" lg="3">
@@ -120,22 +120,22 @@ onMounted(() => Promise.all([loadMeta(), loadMembers()]))
         <template #item.contact="{ item }"><div>{{ item.email || '—' }}</div><div class="text-caption">{{ item.mobile }}</div></template>
         <template #item.access="{ item }"><VChip size="small" :color="item.access_credential?.status === 'active' ? 'success' : 'secondary'" variant="tonal">{{ (item.access_credential?.status || 'not issued').replace('_', ' ') }}</VChip></template>
         <template #item.status="{ item }"><VChip size="small" :color="colours[item.status]" variant="tonal">{{ item.status }}</VChip></template>
-        <template #item.actions="{ item }"><VBtn icon="tabler-chevron-right" variant="text" size="small" @click.stop="viewMember(item)" /></template>
+        <template #item.actions="{ item }"><VBtn icon="tabler-chevron-right" variant="text" size="small" :aria-label="`View ${item.display_name}`" @click.stop="viewMember(item)" /></template>
       </VDataTableServer>
     </VCard>
 
     <VDialog v-model="formOpen" max-width="1050" persistent scrollable>
       <VCard>
-        <VCardTitle class="d-flex justify-space-between align-center pa-6"><span>{{ selected ? `Edit ${selected.display_name}` : 'Add member' }}</span><VBtn icon="tabler-x" variant="text" @click="formOpen = false" /></VCardTitle>
+        <VCardTitle class="d-flex justify-space-between align-center pa-6"><span>{{ selected ? `Edit ${selected.display_name}` : 'Add member' }}</span><VBtn icon="tabler-x" variant="text" aria-label="Close member form" @click="formOpen = false" /></VCardTitle>
         <VDivider />
         <VCardText class="pa-6"><MemberForm v-if="formOpen" :member-id="selected?.id" :meta="meta" @saved="saved" @cancel="formOpen = false" /></VCardText>
       </VCard>
     </VDialog>
 
-    <VNavigationDrawer v-model="profileOpen" location="right" temporary width="520">
-      <template v-if="selected">
+    <VDialog v-model="profileOpen" max-width="760" scrollable>
+      <VCard v-if="selected">
         <div class="pa-6">
-          <div class="d-flex justify-space-between"><div><div class="text-caption text-primary">{{ selected.member_number }}</div><h4 class="text-h4">{{ selected.display_name }}</h4></div><VBtn icon="tabler-x" variant="text" @click="profileOpen = false" /></div>
+          <div class="d-flex justify-space-between"><div><div class="text-caption text-primary">{{ selected.member_number }}</div><h4 class="text-h4">{{ selected.display_name }}</h4></div><VBtn icon="tabler-x" variant="text" aria-label="Close member details" @click="profileOpen = false" /></div>
           <div class="d-flex gap-2 mt-3"><VChip :color="colours[selected.status]" variant="tonal">{{ selected.status }}</VChip><VChip v-if="selected.age !== null" variant="tonal">Age {{ selected.age }}</VChip></div>
           <VBtn v-if="canEditCentral" class="mt-5" block prepend-icon="tabler-edit" variant="tonal" @click="editMember(selected)">Edit central HSC record</VBtn>
         </div>
@@ -184,8 +184,8 @@ onMounted(() => Promise.all([loadMeta(), loadMembers()]))
           </VCard>
           <VAlert v-if="!selected.bookings?.length" type="info" variant="tonal">No booking history yet.</VAlert>
         </div>
-      </template>
-    </VNavigationDrawer>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 

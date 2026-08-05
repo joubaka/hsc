@@ -32,10 +32,10 @@ async function login() {
 </script>
 
 <template>
-  <div class="auth-wrapper d-flex align-center justify-center pa-6">
-    <VCard width="460" class="pa-6">
+  <main class="auth-wrapper d-flex align-center justify-center pa-4 pa-sm-6">
+    <VCard width="100%" max-width="460" class="auth-card pa-2 pa-sm-6">
       <VCardText class="text-center">
-        <div class="d-flex justify-center align-center gap-3 mb-6">
+        <div class="auth-brand d-flex justify-center align-center gap-3 mb-6">
           <VNodeRenderer :nodes="themeConfig.app.logo" />
           <h1 class="text-h3">Hermanus Sports Club</h1>
         </div>
@@ -52,6 +52,7 @@ async function login() {
             :type="visible ? 'text' : 'password'"
             autocomplete="current-password"
             :append-inner-icon="visible ? 'tabler-eye-off' : 'tabler-eye'"
+            :aria-label="visible ? 'Hide password' : 'Show password'"
             class="mb-5"
             @click:append-inner="visible = !visible"
           />
@@ -60,9 +61,23 @@ async function login() {
         <p class="text-caption text-medium-emphasis text-center mt-5 mb-0">Public registration is disabled. Contact an HSC super administrator for access.</p>
       </VCardText>
     </VCard>
-  </div>
+  </main>
 </template>
 
 <style scoped>
-.auth-wrapper { min-height: 100vh; background: rgb(var(--v-theme-background)); }
+.auth-wrapper {
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(var(--v-theme-primary), 0.09), transparent 32rem),
+    rgb(var(--v-theme-background));
+}
+
+.auth-card { margin-inline: auto; }
+
+@media (max-width: 420px) {
+  .auth-brand { flex-direction: column; text-align: center; }
+  .auth-brand :deep(h1) { font-size: 1.75rem !important; line-height: 1.2; }
+}
 </style>

@@ -2,9 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" href="{{ asset('favicon.ico') }}" />
+  <link rel="icon" type="image/png" href="{{ Vite::asset('resources/images/hsc-logo.png') }}" />
+  <link rel="apple-touch-icon" href="{{ Vite::asset('resources/images/hsc-logo.png') }}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vuexy - Vuejs Admin Dashboard Template</title>
+  <meta name="theme-color" content="#111A3F" />
+  <meta name="description" content="Hermanus Sports Club administration and member services." />
+  <title>Hermanus Sports Club</title>
   <link rel="stylesheet" type="text/css" href="{{ asset('loader.css') }}" />
   @vite(['resources/js/main.js'])
 </head>
@@ -40,11 +43,9 @@
   </div>
   
   <script>
-    const loaderColor = localStorage.getItem('vuexy-initial-loader-bg') || '#FFFFFF'
-    const primaryColor = localStorage.getItem('vuexy-initial-loader-color') || '#7367F0'
+    const loaderColor = localStorage.getItem('hsc-initial-loader-bg') || '#F6F7FB'
+    const primaryColor = localStorage.getItem('hsc-initial-loader-color') || '#111A3F'
 
-    if (loaderColor)
-      document.documentElement.style.setProperty('--initial-loader-bg', loaderColor)
     if (loaderColor)
       document.documentElement.style.setProperty('--initial-loader-bg', loaderColor)
 

@@ -360,6 +360,14 @@
     "watchTriggerable": true,
     "watchWithFilter": true,
     "whenever": true,
-    "$memberApi": true
+    "$memberApi": true,
+    "BOOKING_DAY_END": true,
+    "BOOKING_DAY_START": true,
+    "BOOKING_LANE_HEIGHT": true,
+    "BOOKING_PIXELS_PER_MINUTE": true,
+    "BOOKING_TIME_SLOTS": true,
+    "useBookingCalendar": true,
+    "BOOKING_WEEKDAYS": true,
+    "useBookingSeries": true
   }
 }
