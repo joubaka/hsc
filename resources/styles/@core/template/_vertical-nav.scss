@@ -13,8 +13,15 @@
       padding-inline-end: 0.125rem;
 
       .app-logo {
-        .app-title {
-          font-size: 22px;
+        min-inline-size: 0;
+
+        .app-logo-title {
+          overflow: visible;
+          max-inline-size: 9rem;
+          font-size: 1.125rem;
+          line-height: 1.2;
+          text-overflow: clip;
+          white-space: normal;
         }
       }
     }

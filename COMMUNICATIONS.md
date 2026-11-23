@@ -6,7 +6,7 @@ Transactional messages are created automatically for booking confirmations, book
 
 ## Local testing
 
-The current local `.env` uses Mailtrap's SMTP sandbox. Messages will appear in the configured Mailtrap inbox and will not be delivered to real members.
+The example environment uses Laravel's `log` mailer. Messages are written to the application log and are not delivered to real members. If a Mailpit, Mailtrap, or other SMTP sandbox is configured locally, verify its host, port, and credentials in `.env` before relying on inbox delivery.
 
 Run these in separate terminals while testing queued and scheduled mail:
 
@@ -19,7 +19,7 @@ Use the admin **Communication Centre** to send a test announcement. Then sign in
 
 ## Production requirements
 
-Before real delivery, replace the Mailtrap settings with the club's production SMTP provider and set `MAIL_FROM_ADDRESS`. Keep one queue worker running for the `communications,default` queues and invoke `php artisan schedule:run` every minute using the server scheduler. After changing environment values, run:
+Before real delivery, configure the club's production SMTP provider and set `MAIL_FROM_ADDRESS` and `MAIL_FROM_NAME`. Keep one queue worker running for the `communications,default` queues and invoke `php artisan schedule:run` every minute using the server scheduler. After changing environment values, run:
 
 ```powershell
 php artisan optimize:clear
